@@ -1,1 +1,35 @@
-th
+<!-- web/templates/games/game24.html -->
+<!DOCTYPE html>
+<html>
+<head>
+    <title>24 Game - WeAreLittleTeachers</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='games/game24/css/style.css') }}">
+</head>
+<body>
+    <div class="game-container">
+        <h1>24 Game</h1>
+        
+        <div class="controls">
+            <select id="difficulty">
+                <option value="easy">Easy</option>
+                <option value="medium" selected>Medium</option>
+                <option value="hard">Hard</option>
+            </select>
+            <button id="new-puzzle">New Puzzle</button>
+        </div>
+
+        <div class="cards-container" id="cards-container">
+            <!-- Cards will be displayed here -->
+        </div>
+
+        <div class="solution-area">
+            <input type="text" id="solution-input" placeholder="Enter your solution (e.g., (6-2)*6)">
+            <button id="check-solution">Check Solution</button>
+        </div>
+
+        <div class="result" id="result"></div>
+    </div>
+
+    <script src="{{ url_for('static', filename='games/game24/js/script.js') }}"></script>
+</body>
+</html>
