@@ -1,0 +1,92 @@
+# Python bytecode
+**/__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual envs
+.venv/
+venv/
+ENV/
+env/
+game24-env/
+
+# Logs
+logs/
+*.log
+
+# Local config / secrets
+.env
+*.secret
+*.pem
+*.key
+
+# Databases
+*.sqlite3
+*.db
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+
+# Editors/OS
+.vscode/
+.idea/
+.DS_Store
+
+logs/*
+!logs/.gitkeep
+# Python bytecode
+**/__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual envs
+.venv/
+venv/
+ENV/
+env/
+game24-env/
+
+# Logs
+logs/
+*.log
+
+# Local config / secrets
+.env
+*.secret
+*.pem
+*.key
+
+# Databases
+*.sqlite3
+*.db
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+
+# Editors/OS
+.vscode/
+.idea/
+.DS_Store
+# logs anywhere
+**/logs/*
+!**/logs/.gitkeep
+
+# python caches anywhere
+**/__pycache__/
+*.py[cod]
+*$py.class
+
+# generic logs
+*.log
+
+# Ignore everything inside any logs dir…
+**/logs/**
+# …but allow the logs directory itself (so we can track .gitkeep)
+!**/logs/
+# …and keep the placeholder file
+!**/logs/.gitkeep
+
