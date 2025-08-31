@@ -64,7 +64,7 @@ def setup_logging(app):
             os.makedirs(log_dir)
         
         file_handler = RotatingFileHandler(
-            os.path.join(log_dir, 'dev.log'),
+            os.path.join(log_dir, 'wearelittleteachers.log'),
             maxBytes=10240,
             backupCount=10
         )
