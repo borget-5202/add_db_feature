@@ -6,8 +6,7 @@ class Config:
     SECRET_KEY = os.environ.get('SECRET_KEY') or 'dev-secret-key-change-in-production'
     
     # Database configuration
-    SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL') or \
-        'postgresql://littleteachers:littlelove@localhost/wearelittleteachers'
+    SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL') 
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     
     # Session settings
