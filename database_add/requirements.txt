@@ -1,0 +1,42 @@
+# Core CLI game (no web) - keep these
+# (no deps required)
+
+# Tools/download_and_build_cards.py - keep these
+requests>=2.31.0
+cairosvg>=2.7.0
+Pillow>=10.0.0
+
+# Web framework - keep these
+fastapi
+uvicorn
+python-multipart
+jinja2
+flask>=2.0.0
+python-dotenv
+
+# === NEW DEPENDENCIES FOR DATABASE & PRODUCTION ===
+# Database
+Flask-SQLAlchemy==3.0.5
+psycopg2-binary==2.9.7  # For PostgreSQL
+SQLAlchemy==2.0.20
+
+# Database migrations (optional but recommended)
+alembic==1.12.0
+
+# Production server (instead of Flask dev server)
+gunicorn==21.2.0
+
+# Environment variables
+python-dotenv==1.0.0  # (already exists, just noting it's needed)
+
+# Optional: For future payment integration
+stripe==7.0.0
+
+# Optional: For future email notifications
+flask-mail==0.9.1
+
+# Optional: For enhanced security
+bcrypt==4.0.1
+flask-login==0.6.2  # If you add user accounts later
+
+#pip install -r requirements.txt
