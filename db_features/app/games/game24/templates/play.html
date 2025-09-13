@@ -1,1 +1,207 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>24-Point Card Game</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <!-- Keep your Flask paths exactly like this -->
+  <link rel="stylesheet" href="{{ url_for('game24.static', filename='css/style.css') }}">
+</head>
+<body>
+  <div class="wrap">
+    <header class="game-header">
+      <h1 class="game-title">24-Point Card Game</h1>
+      <p class="game-subtitle">Use exactly 4 cards with + − × ÷ ^ (and parentheses) to make 24</p>
+    </header>
+
+    <div class="panel">
+      <div class="topline">
+        <span id="question">Dealing…</span>
+        <span id="timer">00:00.0</span>
+
+        <div class="right-tools">
+          <details class="settings">
+            <summary>Settings</summary>
+
+            <div class="settings-row">
+              <label>Theme
+                <select id="theme">
+                  <option value="classic">Classic</option>
+                  <option value="kids">Kids</option>
+                  <option value="seniors">Seniors</option>
+                </select>
+              </label>
+
+              <label>Difficulty
+                <select id="level">
+                  <option value="easy">easy</option>
+                  <option value="medium">medium</option>
+                  <option value="hard">hard</option>
+                  <option value="challenge">Challenge</option>
+                  <option value="custom">custom</option>
+                  <option value="competition">competition</option>
+                </select>
+              </label>
+            </div>
+
+            <div class="settings-row">
+              <label>
+                <input type="checkbox" id="autoDeal">
+                Auto-Deal (Continuous Play)
+              </label>
+            </div>
+
+            <div class="settings-row" id="casePoolRow" style="display:none;">
+              <label for="casePoolInput" style="display:block;">Case Pool (IDs)</label>
+
+              <div class="row-inline" style="display:grid; grid-template-columns:minmax(260px,1fr) auto auto; gap:8px; align-items:center;">
+                <input id="casePoolInput" type="text" placeholder="e.g., 18, 28  95|108" />
+                <label for="compDurationInput" class="inline-label" style="white-space:nowrap;">
+                  Duration (min)
+                  <input id="compDurationInput" type="number" min="1" max="60" step="1" value="5" style="width:72px; margin-left:6px;">
+                </label>
+                <button id="saveCasePool" class="info-btn" title="Use these IDs for Custom/Competition" style="justify-self:end;">Save Pool</button>
+              </div>
+
+              <small class="muted block">Up to 25 IDs (1–1820). Any separators: space, comma, or “|”.</small>
+              <small class="muted block">Custom: help enabled. Competition: help disabled, timed play.</small>
+            </div>
+
+            <div class="settings-row">
+              <label>Jump to Case ID:
+                <input type="number" id="caseIdInput" placeholder="e.g., 1259"
+                       min="1" max="1820"
+                       title="Enter a number between 1 and 1820"
+                       style="width: 80px;">
+              </label>
+              <button id="loadCaseBtn" class="info-btn">Go</button>
+            </div>
+          </details>
+
+          <span class="link" id="howtoLink" title="How to play">?</span>
+        </div>
+      </div>
+
+      <div class="board">
+        <!-- Cards -->
+        <div id="cards" class="cards"></div>
+
+        <!-- Operators -->
+        <div class="op-panel">
+          <div class="ops-wrap" id="ops">
+            <button data-op="+">+</button>
+            <button data-op="-">−</button>
+            <button data-op="*">×</button>
+            <button data-op="/"><span>/</span></button>
+            <button data-op="^">^</button>
+            <button data-op="(">(</button>
+            <button data-op=")">)</button>
+          </div>
+        </div>
+
+        <!-- Message -->
+        <div id="msg" class="status"></div>
+
+        <!-- Answer box -->
+        <div class="answer-container">
+          <input id="answer" class="answer-box" type="text"
+                 placeholder="Example: (A+Q)*(T-1) — T=10, ^=power"
+                 autocomplete="off" />
+          <div id="answerFeedback" class="answer-feedback"></div>
+        </div>
+
+        <!-- Main actions -->
+        <div class="button-row">
+          <button id="backspace" class="danger-btn">⌫ Back</button>
+          <button id="clear" class="clear-btn">Clear</button>
+          <button id="no" class="danger-btn">No Solution (N)</button>
+          <button id="check" class="success-btn">Check (Enter)</button>
+          <button id="next" class="primary-btn">Deal (D)</button>
+        </div>
+
+        <!-- Secondary actions -->
+        <div class="button-row">
+          <button id="help" class="info-btn">Help (H)</button>
+          <button id="helpAll" class="info-btn">Help All (Shift+H)</button>
+          <button id="restart" class="danger-btn">Restart(R)</button>
+          <button id="exit" class="secondary-btn">Exit(X)</button>
+        </div>
+
+        <!-- Solutions -->
+        <div id="solutionPanel"><div id="solutionMsg"></div></div>
+
+        <!-- Stats -->
+        <div class="stats">
+          <span id="played">Played: 0</span>
+          <span id="solved">Solved: 0</span>
+          <span id="revealed">Revealed: 0</span>
+          <span id="totalTime">Time: 00:00</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- How-to Modal -->
+  <div class="modal-backdrop" id="modalBackdrop" role="dialog" aria-modal="true" style="display:none;">
+    <div class="modal">
+      <div class="modal-head">
+        <h3>How it works</h3>
+        <button class="close" id="modalClose" style="cursor:pointer">✕</button>
+      </div>
+
+      <div class="tabs">
+        <button class="tab-link active" data-tab="basic">Basics</button>
+        <button class="tab-link" data-tab="strategies">Strategies</button>
+        <button class="tab-link" data-tab="teacher">Teacher Mode</button>
+      </div>
+
+      <div id="basic" class="tab-content" style="display:block;">
+        <ul>
+          <li>Use each of the 4 numbers exactly once to make <b>24</b>.</li>
+          <li>Allowed: <b>+</b> <b>−</b> <b>*</b> <b>/</b> <b>^</b> (power) and parentheses.</li>
+          <li>Ranks: <b>A=1</b>, <b>J=11</b>, <b>Q=12</b>, <b>K=13</b>, <b>T=10</b>.</li>
+          <li>Shortcuts: <b>Enter=Check</b>, <b>D=Deal</b>, <b>N=No solution</b>, <b>H</b>/<b>Shift+H</b> help, <b>R</b> restart, <b>X</b> exit.</li>
+        </ul>
+      </div>
+
+      <div id="strategies" class="tab-content">
+        <h4>General</h4>
+        <ol>
+          <li><strong>Every game has 4 poker cards.</strong></li>
+          <li><strong>Build your formula.</strong> Use + − × ÷ ^ and parentheses.</li>
+          <li><strong>Practice sets.</strong> Teachers can use Custom/Competition pools.</li>
+        </ol>
+      </div>
+
+      <div id="teacher" class="tab-content">
+        <h4>Teacher Mode</h4>
+        <p><strong>Custom</strong>: paste up to 25 IDs and Save Pool. Help allowed.</p>
+        <p><strong>Competition</strong>: same pool with a timer. Help disabled.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Summary Modal -->
+  <div class="modal-backdrop" id="summaryBackdrop" role="dialog" aria-modal="true" style="display:none;">
+    <div class="modal">
+      <div class="modal-head">
+        <h3>Session Summary</h3>
+        <button class="close" id="summaryClose" style="cursor:pointer">✕</button>
+      </div>
+      <div id="summaryBody"></div>
+      <div style="margin-top:12px; display:flex; gap:8px; justify-content:flex-end;">
+        <button id="summaryOk" class="primary-btn">OK</button>
+      </div>
+    </div>
+  </div>
+
+  <script nonce="{{ csp_nonce }}">
+    // Base URLs from your Flask app
+    window.GAME24_BASE = "{{ url_for('game24.play')|replace('/play','') }}";
+    window.GAME24_API_BASE = {{ game24_api_base|tojson }};
+    window.GAME24_STATIC_BASE = "{{ url_for('game24.static', filename='game24') }}";
+  </script>
+  <script src="{{ url_for('game24.static', filename='js/script.js') }}"></script>
+</body>
+</html>
 
