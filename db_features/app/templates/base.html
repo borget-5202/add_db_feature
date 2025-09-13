@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{% block title %}Little Teachers{% endblock %}</title>
+  <style>
+    body { font-family: system-ui, Arial, sans-serif; margin: 2rem; }
+    .flash { padding: .5rem .75rem; margin: .5rem 0; border-radius: 6px; }
+    .flash.error { background:#fee; border:1px solid #fbb; }
+    .flash.info  { background:#eef; border:1px solid #bbf; }
+    .flash.success{background:#efe; border:1px solid #bfb; }
+    form label { display:block; margin:.5rem 0; }
+    input { padding:.4rem; }
+    button { padding:.5rem .9rem; cursor:pointer; }
+  </style>
+</head>
+<body>
+  <nav style="margin-bottom:1rem;">
+    <a href="/">Home</a>
+    {% if current_user.is_authenticated %}
+      <span style="margin-left:.5rem;">Hi, {{ current_user.username }}</span>
+      <a href="{{ url_for('auth.logout') }}" style="margin-left:1rem;">Logout</a>
+    {% else %}
+      <a href="{{ url_for('auth.login') }}" style="margin-left:1rem;">Login</a>
+      <a href="{{ url_for('auth.register') }}" style="margin-left:.5rem;">Register</a>
+      <a href="{{ url_for('auth.forgot') }}" style="margin-left:.5rem;">Forgot?</a>
+    {% endif %}
+  </nav>
+
+  {% with msgs = get_flashed_messages(with_categories=true) %}
+    {% if msgs %}
+      {% for category, message in msgs %}
+        <div class="flash {{ category }}">{{ message }}</div>
+      {% endfor %}
+    {% endif %}
+  {% endwith %}
+
+  {% block content %}{% endblock %}
+
+</body>
+</html>
+
