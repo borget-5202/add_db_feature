@@ -1,1 +1,11 @@
-
+<!doctype html>
+<html>
+  <body>
+    <h1>Choose a Game</h1>
+    <ul>
+      {% for g in games %}
+        <li><a href="{{ url_for(g.key + '.play') }}">{{ g.name }}</a></li>
+      {% endfor %}
+    </ul>
+  </body>
+</html>
