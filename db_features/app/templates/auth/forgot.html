@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block title %}Forgot Password{% endblock %}
+{% block content %}
+<h1>Forgot Password</h1>
+<form method="post" action="{{ url_for('auth.forgot') }}">
+  <label>Username or Email
+    <input name="username_or_email" required>
+  </label>
+  <button type="submit">Send reset link</button>
+</form>
+<p><a href="{{ url_for('auth.login') }}">Back to login</a></p>
+{% endblock %}
+
