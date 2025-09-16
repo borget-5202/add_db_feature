@@ -1,7 +1,8 @@
+<!--/* app/templates/home/index.html */-->
 <!doctype html>
 <html>
   <body>
-    <h1>Choose a Game</h1>
+    <h1>Choose a Fun Game</h1>
     <ul>
       {% for g in games %}
         <li><a href="{{ url_for(g.key + '.play') }}">{{ g.name }}</a></li>
