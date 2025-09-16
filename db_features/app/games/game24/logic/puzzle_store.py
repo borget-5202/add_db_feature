@@ -136,7 +136,7 @@ def _load_from_db() -> List[Dict[str, Any]]:
     if not game:
         return []
     rows = (Puzzle.query
-            .filter_by(game_id=game.id, is_active=True)
+            .filter_by(game_id=game.game_id, is_active=True)
             .order_by(Puzzle.id.asc())
             .all())
     puzzles: List[Dict[str, Any]] = []
