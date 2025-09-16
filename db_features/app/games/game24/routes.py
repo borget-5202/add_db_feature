@@ -107,7 +107,7 @@ def play():
         db.session.add(game)
         db.session.flush()
 
-    sess = GameSession(session_uuid=uuid4(), user_id=current_user.id, game_id=game.id)
+    sess = GameSession(session_uuid=uuid4(), user_id=current_user.id, game_id=game.game_id)
     db.session.add(sess)
     db.session.commit()
     api_base = url_for("game24.api_next").rsplit("/", 1)[0]  # "/game24/api"
