@@ -1,5 +1,6 @@
-from flask import Flask
-import click
+# app/__init__.py
+from flask import Flask, send_from_directory
+import click, os
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
 from flask_login import LoginManager
@@ -9,7 +10,6 @@ from .models import User
 import secrets
 from flask import g
 
-
 from .db import db
 migrate = Migrate()
 login_manager = LoginManager()
@@ -18,6 +18,7 @@ limiter = Limiter(get_remote_address, storage_uri="memory://")
 def create_app(config_object="config.Config"):
     app = Flask(__name__)
     app.config.from_object(config_object)
+    app.config.setdefault("GAME24_WARMUP", True)
 
     db.init_app(app)
     migrate.init_app(app, db)
@@ -32,27 +33,30 @@ def create_app(config_object="config.Config"):
     from .auth.routes import auth_bp
     app.register_blueprint(auth_bp, url_prefix="/auth")
 
+    from .games.assets_bp import assets_bp
+    app.register_blueprint(assets_bp)
+
     from .games.game24.routes import bp as game24_bp
     app.register_blueprint(game24_bp, url_prefix="/game24")
 
+    from .games.count_by_2s.routes import bp as cb2s_bp
+    app.register_blueprint(cb2s_bp, url_prefix="/count_by_2s")
 
     # --- Legacy alias: /api/game24/* -> /game24/api/* (preserve query string; 307 keeps method/body) ---
     from flask import redirect, request
-
-    #@app.route("/api/game24/<path:subpath>", methods=["GET","POST","PUT","PATCH","DELETE","OPTIONS"])
-    #def _legacy_game24_api(subpath):
-    #    qs = request.query_string.decode()  # keep ?level=...&seq=...
-    #    target = f"/game24/api/{subpath}" + (f"?{qs}" if qs else "")
-    #    return redirect(target, code=307)
-
-    # ----- Initialize Game24 puzzle store now (Flask 3.x safe) -----
+    
+    # In your __init__.py file, update the config section:
+    app.config.setdefault("GAME24_WARMUP", True)
+    
+    # And update the warmup section:
     with app.app_context():
-        try:
-            from .games.game24.logic.puzzle_store import init_store as _init_store
-            _init_store(force=False)   # DB-first, fallback JSON
-            app.logger.info("Game24 puzzle store initialized at startup.")
-        except Exception as e:
-            app.logger.warning("Game24 store init skipped: %s", e)
+        if app.config["GAME24_WARMUP"]:
+            try:
+                from .games.game24.logic.puzzle_store import init_store as _init_store
+                _init_store(force=False)
+                app.logger.info("Game24 puzzle store initialized at startup.")
+            except Exception:
+                app.logger.exception("Game24 warmup failed")
 
 
     # ---- CLI: rebuild Game24 puzzle store caches (DB-first, JSON fallback) ----
@@ -98,7 +102,31 @@ def create_app(config_object="config.Config"):
         click.echo(f"Game24 puzzles loaded: {total} total, {with_solutions} with solutions")
 
 
+    @app.route("/favicon.ico")
+    def favicon():
+        return send_from_directory(
+            os.path.join(app.root_path, "static"),
+            "favicon.ico",
+            mimetype="image/vnd.microsoft.icon",
+        )
+
+    @app.cli.command("stats-refresh")
+    def stats_refresh():
+        from .db import db
+        db.session.execute(db.text("REFRESH MATERIALIZED VIEW CONCURRENTLY app.mv_user_daily_attempts;"))
+        db.session.commit()
+        print("Refreshed mv_user_daily_attempts")
+
+    @app.route("/games/assets/<path:filename>")
+    def games_assets(filename):
+        # Files live at app/games/assets/*
+        return send_from_directory(
+            os.path.join(app.root_path, "games", "assets"),
+            filename,
+        )
+
     return app
+
 
 
 @login_manager.user_loader
