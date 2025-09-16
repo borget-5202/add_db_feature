@@ -1,3 +1,4 @@
+// app/games/game24/static/js/script/js// Change heading:
 const API_BASE = (typeof window !== "undefined" && window.GAME24_API_BASE) ? window.GAME24_API_BASE : "/game24/api";
 const STATIC_BASE = (typeof window !== "undefined" && window.GAME24_STATIC_BASE) ? window.GAME24_STATIC_BASE : "/static/games/game24";
 
