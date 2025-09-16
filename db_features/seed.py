@@ -3,6 +3,29 @@ from pathlib import Path
 import json
 from app import create_app, db
 from app.models import Game, Puzzle  # ensure these models exist & use schema="app"
+from app.db import db
+from app.models import GameItem
+
+app = create_app()
+with app.app_context():
+    # Ensure a game row exists for your new game (e.g., “store”)
+    store = Game.query.filter_by(slug="store").first()
+    if not store:
+        store = Game(slug="store", title="Shopping Math", modality="real_world")
+        db.session.add(store); db.session.flush()
+
+    item = GameItem(
+        game_id=store.id,
+        external_id="store-0001",
+        title="Exact spend to 24",
+        difficulty="easy",
+        content_json={"balance": 24, "items":[{"name":"Apple","price":3},{"name":"Milk","price":7}]},
+        source="seed:v1"
+    )
+    db.session.add(item)
+    db.session.commit()
+    print("Seeded GameItem id:", item.id)
+
 
 def upsert_game(slug, title, modality, description=""):
     g = Game.query.filter_by(slug=slug).first()
