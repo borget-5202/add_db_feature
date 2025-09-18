@@ -1,42 +1,96 @@
 (() => {
   'use strict';
 
+  // ---------- Config ----------
   const API_BASE = window.GAME24_API_BASE || '/count_by_2s/api';
   const FIRST    = window.__FIRST_PAYLOAD__ || null;
 
-  const $ = (q)=>document.querySelector(q);
-  const on = (el, evt, fn) => el && el.addEventListener(evt, fn);
+  const $  = (q) => document.querySelector(q);
+  const on = (el, ev, fn) => el && el.addEventListener(ev, fn);
 
+  // DOM refs
   const el = {
-    level: $('#level'),
-    question: $('#question'),
-    cards: $('#cards'),
-    answer: $('#answer'),
-    feedback: $('#answerFeedback'),
+    level:         $('#level'),
+    autoDeal:      $('#autoDeal'),
+
+    question:      $('#question'),
+    cards:         $('#cards'),
+    answer:        $('#answer'),
+    feedback:      $('#answerFeedback'),
     solutionPanel: $('#solutionPanel'),
-    solutionMsg: $('#solutionMsg'),
-    msg: $('#msg'),
-    timer: $('#timer'),
-    restart: $('#restart'),
-    exit: $('#exit'),
-    played: $('#played'),
-    solved: $('#solved'),
-    revealed: $('#revealed'),
-    total: $('#totalTime'),
-  };
-  const btn = {
-    clear: $('#clear'),
-    next: $('#next'),
-    check: $('#check'),
-    help: $('#help'),
-    backspace: $('#backspace'),
+    solutionMsg:   $('#solutionMsg'),
+    msg:           $('#msg'),
+    timer:         $('#timer'),
+
+    played:        $('#played'),
+    solved:        $('#solved'),
+    revealed:      $('#revealed'),
+    total:         $('#totalTime'),
+
+    // buttons
+    backspace:     $('#backspace'),
+    clear:         $('#clear'),
+    check:         $('#check'),
+    next:          $('#next'),
+    help:          $('#help'),
+    restart:       $('#restart'),
+    exit:          $('#exit'),
+
+    // optional modals in your template
+    restartModal:    $('#restartModal'),
+    restartConfirm:  $('#restartConfirm'),
+    restartCancel:   $('#restartCancel'),
+    restartClose:    $('#restartClose'),
+    exitModal:       $('#exitModal'),
+    exitConfirm:     $('#exitConfirm'),
+    exitCancel:      $('#exitCancel'),
+    exitClose:       $('#exitClose'),
+    summaryBackdrop: $('#summaryBackdrop'),
+    summaryBody:     $('#summaryBody'),
+    summaryOk:       $('#summaryOk'),
+    summaryClose:    $('#summaryClose'),
   };
 
-  // --- stats + timer
-  const stats = { played:0, solved:0, revealed:0, skipped:0, totalTime:0 };
-  let tStart = 0, tTick = null, current = null, currentSeq = 0;
+  // ---------- Local stats (client-owned) ----------
+  const stats = {
+    played: 0,
+    solved: 0,
+    revealed: 0,
+    skipped: 0,
+    totalTime: 0,   // seconds
+  };
 
-  async function fetchJSON(url, opts, retries = 2, backoffMs = 400) {
+  function resetStats(){
+    stats.played = stats.solved = stats.revealed = stats.skipped = 0;
+    stats.totalTime = 0;
+    updateStatsUI();
+  }
+
+  function updateStatsUI(){
+    if (el.played)   el.played.textContent   = `Played: ${stats.played}`;
+    if (el.solved)   el.solved.textContent   = `Solved: ${stats.solved}`;
+    if (el.revealed) el.revealed.textContent = `Revealed: ${stats.revealed}`;
+    if (el.total) {
+      const m = String(Math.floor(stats.totalTime/60)).padStart(2,'0');
+      const s = String(stats.totalTime%60).padStart(2,'0');
+      el.total.textContent = `Time: ${m}:${s}`;
+    }
+  }
+
+  // ---------- Session state ----------
+  let current      = null;   // last payload from server
+  let uiQ          = 0;      // UI question counter (0-based). We display Q{uiQ+1}
+  let countedThisPuzzle = false; // ensure `played` increments once per puzzle
+
+  // timers
+  let tStart   = 0, tTick = null; // puzzle timer
+  let nextTimer = null;           // pending auto-deal timer
+
+  // auto-deal setting
+  let autoDealOn = el.autoDeal ? !!el.autoDeal.checked : true;
+
+  // ---------- Utilities ----------
+  async function fetchJSON(url, opts, retries = 1, backoff = 250) {
     for (let i = 0; i <= retries; i++) {
       try {
         const r = await fetch(url, opts);
@@ -44,184 +98,309 @@
         return await r.json();
       } catch (e) {
         if (i === retries) throw e;
-        await new Promise(res => setTimeout(res, backoffMs * (i + 1)));
+        await new Promise(res => setTimeout(res, backoff * (i + 1)));
       }
     }
   }
-  function fmt(ms){
-    const T=Math.max(0,Math.floor(ms)), t=Math.floor((T%1000)/100), s=Math.floor(T/1000)%60, m=Math.floor(T/60000);
+
+  function fmtTimer(ms) {
+    const T = Math.max(0, Math.floor(ms));
+    const t = Math.floor((T % 1000) / 100);
+    const s = Math.floor(T / 1000) % 60;
+    const m = Math.floor(T / 60000);
     return `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}.${t}`;
   }
-  function timerStart(){
+
+  function timerStart() {
     timerStop();
     tStart = performance.now();
-    el.timer && (el.timer.textContent = '00:00.0');
-    tTick = setInterval(()=>{ el.timer && (el.timer.textContent = fmt(performance.now() - tStart)); }, 100);
-  }
-  function timerStop(){ if (tTick) { clearInterval(tTick); tTick = null; } }
-  function addToTotalTime(){
-    if (!tStart) return;
-    stats.totalTime += Math.floor((performance.now() - tStart) / 1000);
-    tStart = 0;
-    updateStats();
-  }
-  function updateStats(){
-    el.played  && (el.played.textContent  = `Played: ${stats.played}`);
-    el.solved  && (el.solved.textContent  = `Solved: ${stats.solved}`);
-    el.revealed&& (el.revealed.textContent= `Revealed: ${stats.revealed}`);
-    const m=String(Math.floor(stats.totalTime/60)).padStart(2,'0'),
-          s=String(stats.totalTime%60).padStart(2,'0');
-    el.total && (el.total.textContent = `Time: ${m}:${s}`);
-  }
-  function clearPanels(){
-    el.feedback && (el.feedback.textContent='', el.feedback.className='answer-feedback');
-    el.msg && (el.msg.textContent='', el.msg.className='status');
-    if (el.solutionPanel) el.solutionPanel.style.display='none';
-    el.solutionMsg && (el.solutionMsg.textContent='');
+    if (el.timer) el.timer.textContent = '00:00.0';
+    tTick = setInterval(() => {
+      if (el.timer) el.timer.textContent = fmtTimer(performance.now() - tStart);
+    }, 100);
   }
 
-  // --- paint
-  function paintCards(images){
+  function timerStop() {
+    if (tTick) { clearInterval(tTick); tTick = null; }
+  }
+
+  function addElapsedToTotal() {
+    if (!tStart) return;
+    const secs = Math.floor((performance.now() - tStart)/1000);
+    stats.totalTime += secs;
+    tStart = 0;
+    updateStatsUI();
+  }
+
+  function cancelNextDeal(){ if (nextTimer) { clearTimeout(nextTimer); nextTimer = null; } }
+  function scheduleNextDeal(){
+    cancelNextDeal();
+    if (autoDealOn) nextTimer = setTimeout(() => { nextTimer = null; deal(); }, 900);
+  }
+
+  function clearPanels() {
+    if (el.feedback){ el.feedback.textContent = ''; el.feedback.className = 'answer-feedback'; }
+    if (el.msg){ el.msg.textContent = ''; el.msg.className = 'status'; }
+    if (el.solutionPanel) el.solutionPanel.style.display = 'none';
+    if (el.solutionMsg) el.solutionMsg.textContent = '';
+  }
+
+  function clearAnswer() { if (el.answer){ el.answer.value = ''; el.answer.focus(); } }
+
+  function backspace() {
+    if (!el.answer) return;
+    el.answer.value = el.answer.value.slice(0, -1);
+    el.answer.focus();
+  }
+
+  function paintCards(images) {
     if (!el.cards) return;
     el.cards.innerHTML = '';
-    (images || []).forEach(c=>{
+    (images || []).forEach(c => {
       const img = document.createElement('img');
-      img.src = c.url; img.alt = c.code; img.className = 'card';
+      img.src = c.url;
+      img.alt = c.code;
+      img.className = 'card';
       el.cards.appendChild(img);
     });
   }
-  function handlePayload(data){
-  current = data || {};
-  currentSeq = Number.isFinite(data?.seq) ? data.seq : 0;
 
-  const qn = (currentSeq|0) + 1;
-  const qText = Array.isArray(data?.question) ? data.question.join(', ') : (data?.question ?? '');
-  el.question && (el.question.textContent = `Q${qn} [#${data?.case_id ?? ''}] — Cards: ${qText}`);
-
-  paintCards(data?.images || []);
-  if (el.answer) { el.answer.value=''; el.answer.focus(); }
-  timerStart();
-
-  // ↓↓↓ Only show the reset message for custom/competition ↓↓↓
-  const levelNow = (el.level?.value || data?.difficulty || '').toLowerCase();
-  if (data?.pool_done && (levelNow === 'custom' || levelNow === 'competition')) {
-    if (el.msg) { el.msg.textContent = 'All cases used. Pool reset.'; el.msg.className = 'status status-info'; }
-  } else {
-    if (el.msg) { el.msg.textContent = ''; el.msg.className = 'status'; }
+  function showModal(id){
+    const m = (typeof id === 'string') ? document.getElementById(id) : id;
+    if (m) m.style.display = 'flex';
   }
-}
+  function hideModal(id){
+    const m = (typeof id === 'string') ? document.getElementById(id) : id;
+    if (m) m.style.display = 'none';
+  }
 
-  // --- actions
-  async function deal(){
+  // ---------- Render payload ----------
+  function handlePayload(data) {
+    current = data || {};
+    countedThisPuzzle = false;     // allow `played` once per new puzzle
+
+    // label: Q1, Q2, ...
+    const shownQ = (uiQ|0) + 1;
+    const qText = Array.isArray(data?.question) ? data.question.join(', ')
+                  : (data?.question ?? '');
+    if (el.question) el.question.textContent = `Q${shownQ} [#${data?.case_id ?? ''}] — Cards: ${qText}`;
+    uiQ++; // advance AFTER drawing
+
+    paintCards(data?.images || []);
+    if (el.answer){ el.answer.value = ''; el.answer.focus(); }
+
     clearPanels();
-    el.cards && (el.cards.innerHTML='');
-      el.question && (el.question.textContent='Dealing…');
-    try{
-      const levelVal = el.level ? el.level.value : 'easy';
-      const data = await fetchJSON(`${API_BASE}/next?level=${encodeURIComponent(levelVal)}&seq=${currentSeq}`);
-      handlePayload(data);
-    }catch(e){
-      el.question && (el.question.textContent='');
-      el.msg && (el.msg.textContent='Failed to get a new question. Please try again.', el.msg.className='status status-error');
+    timerStart();
+
+    const lvl = (el.level?.value || data?.difficulty || '').toLowerCase();
+    if (data?.pool_done && (lvl === 'custom' || lvl === 'competition')) {
+      if (el.msg){ el.msg.textContent = 'All cases used. Pool reset.'; el.msg.className = 'status status-info'; }
     }
   }
 
-  async function check(){
+  // ---------- API calls ----------
+  async function deal() {
+    cancelNextDeal();         // avoid stray next after restart
+    clearAnswer();
+    if (el.question) el.question.textContent = 'Dealing…';
+    try {
+      const levelVal = el.level ? el.level.value : 'easy';
+      const data = await fetchJSON(`${API_BASE}/next?level=${encodeURIComponent(levelVal)}&seq=${uiQ}`);
+      handlePayload(data);
+    } catch (e) {
+      if (el.question) el.question.textContent = '';
+      if (el.msg){ el.msg.textContent = 'Failed to get a new question. Please try again.'; el.msg.className = 'status status-error'; }
+    }
+  }
+
+  async function check() {
     if (!current) return;
-    const raw = el.answer ? el.answer.value.trim() : '';
-    if (!raw){
-      el.msg && (el.msg.textContent='Type the final number.', el.msg.className='status status-warning');
+    const raw = (el.answer?.value || '').trim();
+    if (!raw) {
+      if (el.msg){ el.msg.textContent = 'Type the final number.'; el.msg.className = 'status status-warning'; }
       return;
     }
-    try{
-      const r = await fetch(`${API_BASE}/check`, {
-        method:'POST', headers:{'Content-Type':'application/json'},
+    try {
+      const res = await fetchJSON(`${API_BASE}/check`, {
+        method: 'POST',
+        headers: { 'Content-Type':'application/json' },
         body: JSON.stringify({ values: current.values, answer: raw })
       });
-      const res = await r.json();
-      if (res.ok){
-        el.feedback && (el.feedback.textContent='✓', el.feedback.className='answer-feedback success-icon');
-        el.msg && (el.msg.textContent='Correct!', el.msg.className='status status-success');
-        stats.played++; stats.solved++; timerStop(); addToTotalTime(); updateStats();
-        setTimeout(deal, 900);
+
+      // first check on this puzzle? count as played
+      if (!countedThisPuzzle) { stats.played += 1; countedThisPuzzle = true; }
+
+      if (res.ok) {
+        stats.solved += 1;
+        addElapsedToTotal();
+        updateStatsUI();
+
+        if (el.feedback){ el.feedback.textContent = '✓'; el.feedback.className = 'answer-feedback success-icon'; }
+        if (el.msg){ el.msg.textContent = 'Correct!'; el.msg.className = 'status status-success'; }
+        scheduleNextDeal();   // honor Auto-Deal
       } else {
-        el.feedback && (el.feedback.textContent='✗', el.feedback.className='answer-feedback error-icon');
-        el.msg && (el.msg.textContent = res.reason || 'Try again!', el.msg.className='status status-error');
-        stats.played++; updateStats();
+        if (el.feedback){ el.feedback.textContent = '✗'; el.feedback.className = 'answer-feedback error-icon'; }
+        if (el.msg){ el.msg.textContent = res.reason || 'Try again!'; el.msg.className = 'status status-error'; }
       }
-    }catch{
-      el.msg && (el.msg.textContent='Error checking answer', el.msg.className='status status-error');
+    } catch (e) {
+      if (el.msg){ el.msg.textContent = 'Error checking answer'; el.msg.className = 'status status-error'; }
     }
   }
 
-  async function help(){
+  async function help() {
     if (!current) return;
-    try{
-      const r = await fetch(`${API_BASE}/help`, {
-        method:'POST', headers:{'Content-Type':'application/json'},
+    try {
+      const data = await fetchJSON(`${API_BASE}/help`, {
+        method: 'POST',
+        headers: { 'Content-Type':'application/json' },
         body: JSON.stringify({ values: current.values })
       });
-      const data = await r.json();
-      if (el.solutionPanel) el.solutionPanel.style.display='block';
+
+      // Show solution
+      if (el.solutionPanel) el.solutionPanel.style.display = 'block';
       if (el.solutionMsg) {
         if (data.has_solution && Array.isArray(data.solutions)) {
-          el.solutionMsg.innerHTML = data.solutions.map(s=>`<div>${s}</div>`).join('');
+          el.solutionMsg.innerHTML = data.solutions.map(s => `<div>${s}</div>`).join('');
         } else {
           el.solutionMsg.textContent = 'No stored solution.';
         }
       }
-      stats.played++; stats.revealed++; updateStats();
-    }catch{
-      if (el.solutionPanel) el.solutionPanel.style.display='block';
-      el.solutionMsg && (el.solutionMsg.textContent='Error loading help');
+
+      // if player asks for help first time on this puzzle, count as played + revealed
+      if (!countedThisPuzzle) { stats.played += 1; countedThisPuzzle = true; }
+      stats.revealed += 1;
+      addElapsedToTotal();
+      updateStatsUI();
+
+    } catch (e) {
+      if (el.solutionPanel) el.solutionPanel.style.display = 'block';
+      if (el.solutionMsg) el.solutionMsg.textContent = 'Error loading help';
     }
   }
 
-  function clearAnswer(){ el.answer && (el.answer.value='', el.answer.focus()); }
-  function backspace(){
-    if (!el.answer) return;
-    const v = el.answer.value;
-    el.answer.value = v.slice(0, -1);
-    el.answer.focus();
+  // ---------- Restart / Exit ----------
+  async function doRestart() {
+    hideModal(el.restartModal);
+    cancelNextDeal();
+    timerStop();
+
+    // reset local stats + UI sequence
+    resetStats();
+    uiQ = 0;
+
+    try {
+      // Your backend may or may not serve a 'first' payload; we just deal()
+      await fetchJSON(`${API_BASE}/restart`, { method: 'POST' }).catch(()=>{});
+    } catch (_) {}
+
+    deal();  // fetch first puzzle -> shows Q1
   }
 
-  async function exitGame(){
-    try{
-      const payload = { stats };
-      const r = await fetch(`${API_BASE}/exit`, {
-        method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify(payload)
+  function showSummaryAndGo(statsObj, url) {
+    if (el.summaryBackdrop && el.summaryBody && el.summaryOk && el.summaryClose) {
+      el.summaryBody.innerHTML = renderSummary(statsObj);
+      showModal(el.summaryBackdrop);
+      const go = () => { hideModal(el.summaryBackdrop); window.location.href = url; };
+      el.summaryOk.onclick = go;
+      el.summaryClose.onclick = go;
+      setTimeout(go, 1500);
+    } else {
+      const overlay = document.createElement('div');
+      overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;z-index:9999';
+      overlay.innerHTML = `<div style="background:#fff;padding:20px 24px;border-radius:12px;max-width:420px">
+        <h3>Session Summary</h3>
+        ${renderSummary(statsObj)}
+        <div style="text-align:right"><button id="__sum_ok">OK</button></div>
+      </div>`;
+      document.body.appendChild(overlay);
+      document.getElementById('__sum_ok').onclick = () => { window.location.href = url; };
+      setTimeout(() => { window.location.href = url; }, 1500);
+    }
+  }
+
+  function renderSummary(s){
+    const m = Math.floor(s.totalTime/60), sec = s.totalTime%60;
+    const acc = s.played ? Math.round((s.solved/s.played)*100) : 0;
+    return `
+      <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin:10px 0 16px">
+        <div><strong>Played:</strong> ${s.played}</div>
+        <div><strong>Solved:</strong> ${s.solved}</div>
+        <div><strong>Revealed:</strong> ${s.revealed}</div>
+        <div><strong>Skipped:</strong> ${s.skipped}</div>
+        <div><strong>Accuracy:</strong> ${acc}%</div>
+        <div><strong>Time:</strong> ${m}:${String(sec).padStart(2,'0')}</div>
+      </div>`;
+  }
+
+  async function doExit() {
+    hideModal(el.exitModal);
+    cancelNextDeal();
+    timerStop();
+
+    // make sure we include the last puzzle’s time if user exits mid-puzzle
+    addElapsedToTotal();
+
+    // Send local stats to backend; backend will store them in session.meta
+    let resp;
+    try {
+      resp = await fetchJSON(`${API_BASE}/exit`, {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ stats })
       });
-      const j = await r.json();
-      if (j.ok && j.next_url) window.location.href = j.next_url;
-      else window.location.href = '/';
-    }catch{
-      window.location.href = '/';
+    } catch (e) {
+      // If anything fails, still show summary and go home
+      showSummaryAndGo(stats, '/');
+      return;
     }
+
+    const nextUrl = (resp && resp.next_url) ? resp.next_url : '/';
+    showSummaryAndGo(stats, nextUrl);
   }
 
-  // --- wire
-  on(btn.clear, 'click', clearAnswer);
-  on(btn.backspace, 'click', backspace);
-  on(btn.next,  'click', deal);
-  on(btn.check, 'click', check);
-  on(btn.help,  'click', help);
-  on(el.restart, 'click', ()=>{ stats.played=stats.solved=stats.revealed=stats.skipped=0; stats.totalTime=0; updateStats(); deal(); });
-  on(el.exit,    'click', exitGame);
+  // ---------- Wire UI ----------
+  on(el.clear,     'click', () => { clearAnswer(); });
+  on(el.backspace, 'click', () => { backspace(); });
+  on(el.check,     'click', () => { check(); });
+  on(el.next,      'click', () => { stats.skipped += 1; updateStatsUI(); deal(); });
+  on(el.help,      'click', () => { help(); });
 
-  document.addEventListener('keydown', (e)=>{
-    if (e.target === el.answer && e.key === 'Enter'){ e.preventDefault(); check(); return; }
-    if (e.ctrlKey || e.metaKey || e.altKey) return;
-    const k = e.key.toLowerCase();
-    if (k === 'backspace' && document.activeElement !== el.answer){ e.preventDefault(); backspace(); }
-    if (k === 'd') { e.preventDefault(); deal(); }
-    if (k === 'h') { e.preventDefault(); help(); }
-    if (k === 'r') { e.preventDefault(); el.restart?.click(); }
-    if (k === 'x') { e.preventDefault(); exitGame(); }
+  on(el.restart,   'click', () => { cancelNextDeal(); showModal(el.restartModal || 'restartModal'); });
+  on(el.exit,      'click', () => { cancelNextDeal(); showModal(el.exitModal || 'exitModal'); });
+
+  on(el.restartConfirm, 'click', doRestart);
+  on(el.restartCancel,  'click', () => hideModal(el.restartModal || 'restartModal'));
+  on(el.restartClose,   'click', () => hideModal(el.restartModal || 'restartModal'));
+
+  on(el.exitConfirm, 'click', doExit);
+  on(el.exitCancel,  'click', () => hideModal(el.exitModal || 'exitModal'));
+  on(el.exitClose,   'click', () => hideModal(el.exitModal || 'exitModal'));
+
+  on(el.autoDeal, 'change', (e) => { autoDealOn = !!e.target.checked; });
+
+  on(el.level, 'change', () => {
+    // changing difficulty does not reset stats; fetch a fresh question
+    deal();
   });
 
-  // boot
-  updateStats();
-  if (FIRST) handlePayload(FIRST); else deal();
+  document.addEventListener('keydown', (e) => {
+    if (el.answer && e.target === el.answer && e.key === 'Enter') { e.preventDefault(); check(); return; }
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    const k = e.key.toLowerCase();
+    if (k === 'd') { e.preventDefault(); deal(); }
+    if (k === 'h') { e.preventDefault(); help(); }
+    if (k === 'r') { e.preventDefault(); cancelNextDeal(); showModal(el.restartModal || 'restartModal'); }
+    if (k === 'x') { e.preventDefault(); cancelNextDeal(); showModal(el.exitModal || 'exitModal'); }
+    if (k === 'backspace' && document.activeElement !== el.answer) { e.preventDefault(); backspace(); }
+  });
+
+  // ---------- Boot ----------
+  resetStats();
+  uiQ = 0;
+  if (FIRST) {
+    handlePayload(FIRST);        // shows Q1 immediately
+  } else {
+    deal();                      // fetch first puzzle; sends seq=0
+  }
 })();
 
