@@ -4,14 +4,93 @@
   <meta charset="utf-8" />
   <title>{{ title }}</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <!-- Reuse Game24 CSS to keep identical layout/style -->
   <link rel="stylesheet" href="{{ url_for('games_assets_bp.static', filename='css/style.css') }}?v={{ session_id }}">
   <style nonce="{{ csp_nonce }}">
     .back-home { position:absolute; left:16px; top:12px; font-weight:600; text-decoration:none; }
+    
+    /* Modal styles */
+    .modal-backdrop {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0,0,0,0.5);
+      display: none;
+      justify-content: center;
+      align-items: center;
+      z-index: 1000;
+    }
+    
+    .modal {
+      background: white;
+      padding: 20px;
+      border-radius: 8px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+      max-width: 400px;
+      width: 90%;
+    }
+    
+    .modal-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 15px;
+    }
+    
+    .modal-buttons {
+      display: flex;
+      justify-content: flex-end;
+      gap: 10px;
+      margin-top: 20px;
+    }
   </style>
 </head>
 <body>
   <a class="back-home" href="{{ url_for('home.index') }}">← Home</a>
+
+  <!-- Confirmation Modals -->
+  <div id="restartModal" class="modal-backdrop">
+    <div class="modal">
+      <div class="modal-head">
+        <h3>Restart Game?</h3>
+        <button class="close" id="restartClose">✕</button>
+      </div>
+      <p>Are you sure you want to restart? This will reset all game statistics.</p>
+      <div class="modal-buttons">
+        <button id="restartCancel" class="secondary-btn">Cancel</button>
+        <button id="restartConfirm" class="danger-btn">Restart</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="exitModal" class="modal-backdrop">
+    <div class="modal">
+      <div class="modal-head">
+        <h3>Exit Game?</h3>
+        <button class="close" id="exitClose">✕</button>
+      </div>
+      <p>Are you sure you want to exit? You'll see your session statistics.</p>
+      <div class="modal-buttons">
+        <button id="exitCancel" class="secondary-btn">Cancel</button>
+        <button id="exitConfirm" class="primary-btn">Exit</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Summary Modal -->
+  <div class="modal-backdrop" id="summaryBackdrop" role="dialog" aria-modal="true" style="display:none;">
+    <div class="modal">
+      <div class="modal-head">
+        <h3>Session Summary</h3>
+        <button class="close" id="summaryClose" style="cursor:pointer">✕</button>
+      </div>
+      <div id="summaryBody"></div>
+      <div style="margin-top:12px; display:flex; gap:8px; justify-content:flex-end;">
+        <button id="summaryOk" class="primary-btn">OK</button>
+      </div>
+    </div>
+  </div>
 
   <div class="wrap">
     <header class="game-header">
@@ -27,16 +106,14 @@
         <div class="right-tools">
           <details class="settings">
             <summary>Settings</summary>
-
-            <!-- Theme removed -->
             <div class="settings-row">
               <label>Difficulty
                 <select id="level">
                   <option value="easy">easy</option>
                   <option value="medium">medium</option>
                   <option value="hard">hard</option>
-		  {% if enable_all_mode %}
-                  <option value="all"    {{ 'selected' if default_level=='all' else '' }}>all</option>
+                  {% if enable_all_mode %}
+                  <option value="all" {{ 'selected' if default_level=='all' else '' }}>all</option>
                   {% endif %}
                 </select>
               </label>
@@ -45,25 +122,18 @@
               </label>
             </div>
           </details>
-
           <span class="link" id="howtoLink" title="How to play">?</span>
         </div>
       </div>
 
       <div class="board">
-        <!-- Cards -->
         <div id="cards" class="cards"></div>
-
-        <!-- 24 operators removed (not used for typing a final number) -->
-        <!-- We keep the panel wrapper so spacing matches the stylesheet -->
         <div class="op-panel" style="display:none">
           <div class="ops-wrap" id="ops"></div>
         </div>
 
-        <!-- Message -->
         <div id="msg" class="status"></div>
 
-        <!-- Answer box -->
         <div class="answer-container">
           <input id="answer" class="answer-box" type="text"
                  placeholder="Type the final number, e.g., 7"
@@ -71,7 +141,6 @@
           <div id="answerFeedback" class="answer-feedback"></div>
         </div>
 
-        <!-- Main actions -->
         <div class="button-row">
           <button id="backspace" class="danger-btn">⌫ Back</button>
           <button id="clear" class="clear-btn">Clear</button>
@@ -79,35 +148,34 @@
           <button id="next" class="primary-btn">Deal (D)</button>
         </div>
 
-        <!-- Secondary actions -->
         <div class="button-row">
           <button id="help" class="info-btn">Help (H)</button>
           <button id="restart" class="danger-btn">Restart(R)</button>
           <button id="exit" class="secondary-btn">Exit(X)</button>
         </div>
 
-        <!-- Solutions -->
         <div id="solutionPanel"><div id="solutionMsg"></div></div>
 
-        <!-- Stats -->
         <div class="stats">
           <span id="played">Played: 0</span>
           <span id="solved">Solved: 0</span>
           <span id="revealed">Revealed: 0</span>
+          <span id="skipped">Skipped: 0</span>
           <span id="totalTime">Time: 00:00</span>
         </div>
       </div>
     </div>
   </div>
 
-  <!-- Inline config with CSP nonce -->
+  <!-- Inline config -->
   <script nonce="{{ csp_nonce }}">
-    window.GAME24_API_BASE = "{{ cb2_api_base }}";  // points at /count_by_2s/api
-    // we send explicit image URLs from the server, so STATIC_BASE isn't used
+    window.GAME24_API_BASE = "{{ cb2_api_base }}";
     window.__FIRST_PAYLOAD__ = {{ first_payload|tojson }};
+    window.CURRENT_LEVEL = "{{ default_level }}";
+    window.SESSION_ID = "{{ session_id }}";
   </script>
-  <!-- Reuse Game24 client (it will use GAME24_API_BASE and our FIRST_PAYLOAD) -->
+
+  <!-- Game logic -->
   <script src="{{ url_for('count_by_2s.static', filename='js/script.js') }}?v={{ session_id }}"></script>
 </body>
 </html>
-
