@@ -228,4 +228,14 @@ button{ padding:10px 12px; border:none; border-radius:8px; cursor:pointer; font-
   .settings-row{ flex-direction:column; align-items:flex-start; gap:8px; }
   .row-inline{ grid-template-columns:1fr !important; gap:8px !important; }
 }
+.card { box-shadow: 0 2px 8px rgba(0,0,0,.1); border-radius: 8px; }
+button { transition: transform .06s ease; }
+button:active { transform: translateY(1px); }
+.confetti-bit {
+  position: fixed; width: 8px; height: 8px; background: hsl(var(--h,0) 90% 60%);
+  border-radius: 2px; pointer-events: none; animation: confetti-fall 1s ease-out forwards;
+}
+@keyframes confetti-fall {
+  to { transform: translateY(50vh) rotate(720deg); opacity: 0; }
+}
 
