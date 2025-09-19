@@ -6,8 +6,93 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <!-- Keep your Flask paths exactly like this -->
   <link rel="stylesheet" href="{{ url_for('games_assets_bp.static', filename='css/style.css') }}">
+  <style nonce="{{ csp_nonce }}">
+    .back-home { position:absolute; left:16px; top:12px; font-weight:600; text-decoration:none; }
+
+    /* Modal styles */
+    .modal-backdrop {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0,0,0,0.5);
+      display: none;
+      justify-content: center;
+      align-items: center;
+      z-index: 1000;
+    }
+
+    .modal {
+      background: white;
+      padding: 20px;
+      border-radius: 8px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+      max-width: 400px;
+      width: 90%;
+    }
+
+    .modal-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 15px;
+    }
+
+    .modal-buttons {
+      display: flex;
+      justify-content: flex-end;
+      gap: 10px;
+      margin-top: 20px;
+    }
+  </style>
 </head>
 <body>
+  <a class="back-home" href="{{ url_for('home.index') }}">← Home</a>
+
+  <!-- Confirmation Modals -->
+  <div id="restartModal" class="modal-backdrop">
+    <div class="modal">
+      <div class="modal-head">
+        <h3>Restart Game?</h3>
+        <button class="close" id="restartClose">✕</button>
+      </div>
+      <p>Are you sure you want to restart? This will reset all game statistics.</p>
+      <div class="modal-buttons">
+        <button id="restartCancel" class="secondary-btn">Cancel</button>
+        <button id="restartConfirm" class="danger-btn">Restart</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="exitModal" class="modal-backdrop">
+    <div class="modal">
+      <div class="modal-head">
+        <h3>Exit Game?</h3>
+        <button class="close" id="exitClose">✕</button>
+      </div>
+      <p>Are you sure you want to exit? You'll see your session statistics.</p>
+      <div class="modal-buttons">
+        <button id="exitCancel" class="secondary-btn">Cancel</button>
+        <button id="exitConfirm" class="primary-btn">Exit</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Summary Modal -->
+  <div class="modal-backdrop" id="summaryBackdrop" role="dialog" aria-modal="true" style="display:none;">
+    <div class="modal">
+      <div class="modal-head">
+        <h3>Session Summary</h3>
+        <button class="close" id="summaryClose" style="cursor:pointer">✕</button>
+      </div>
+      <div id="summaryBody"></div>
+      <div style="margin-top:12px; display:flex; gap:8px; justify-content:flex-end;">
+        <button id="summaryOk" class="primary-btn">OK</button>
+      </div>
+    </div>
+  </div>
+
   <div class="wrap">
     <header class="game-header">
       <h1 class="game-title">24-Point Card Game</h1>
@@ -195,13 +280,17 @@
     </div>
   </div>
 
-  <script nonce="{{ csp_nonce }}">
-    // Base URLs from your Flask app
-    window.GAME24_BASE = "{{ url_for('game24.play')|replace('/play','') }}";
-    window.GAME24_API_BASE = {{ game24_api_base|tojson }};
-    window.GAME24_STATIC_BASE = "{{ url_for('game24.static', filename='game24') }}";
-  </script>
-  <script src="{{ url_for('game24.static', filename='js/script.js') }}"></script>
+<script nonce="{{ csp_nonce }}">
+  (function () {
+    var base = "{{ url_for('game24.play')|replace('/play','') }}";
+    window.GAME24_API_BASE = base + "/api";
+    window.GAME24_STATIC_BASE = "{{ url_for('games_assets_bp.static', filename='') }}".replace(/\/$/, '');
+    window.CARD_IMG_BASE = "{{ url_for('games_assets_bp.static', filename='cards/') }}";
+    console.log("[GAME24] API_BASE:", window.GAME24_API_BASE);
+  })();
+</script>
+<script src="{{ url_for('game24.static', filename='js/script.js') }}"></script>
+
 </body>
 </html>
 
