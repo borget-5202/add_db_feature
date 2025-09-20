@@ -8,6 +8,8 @@
 
   console.log('[GAME24] Using API_BASE:', API_BASE);
 
+  const autoCloseSummary = false;
+
   // ---- per-tab / per-browser ids ----
   const CLIENT_ID = (() => {
     try {
@@ -60,21 +62,75 @@
   const fmt=(ms)=>{ const T=Math.max(0,Math.floor(ms)), t=Math.floor((T%1000)/100), s=Math.floor(T/1000)%60, m=Math.floor(T/60000); return `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}.${t}`; };
   function timerStart(){ timerStop(); tStart=performance.now(); $('#timer').textContent='00:00.0'; tTick=setInterval(()=>{$('#timer').textContent=fmt(performance.now()-tStart)},100); }
   function timerStop(){ if(tTick){ clearInterval(tTick); tTick=null; } }
-  function addToTotalTime(){ if(tStart){ stats.totalTime += Math.floor((performance.now()-tStart)/1000); tStart=0; updateStats(); } }
+//  function addToTotalTime(){ if(tStart){ stats.totalTime += Math.floor((performance.now()-tStart)/1000); tStart=0; updateStats(); } }
+  function addToTotalTime(){ 
+    if(tStart){
+        const elapsedSeconds = Math.floor((performance.now()-tStart)/1000);
+        stats.totalTime += elapsedSeconds;
+        tStart = 0; 
+        updateStats(); 
+    } 
+}
 
   // ---- stats (local mirrors; backend remains source of truth) ----
-  const stats = { played:0, solved:0, revealed:0, skipped:0, totalTime:0 };
+  const stats = { played:0, solved:0, revealed:0, incorrect:0, skipped:0, totalTime:0 };
+  let countedPlayedThisHand = false;
+  let revealedThisHand = false;
+
   function updateStats(){
-    const S = (id, text) => { const el=document.getElementById(id); if (el) el.textContent=text; };
-    S('played',  `Played: ${stats.played}`);
-    S('solved',  `Solved: ${stats.solved}`);
-    S('revealed',`Revealed: ${stats.revealed}`);
-    const m=String(Math.floor(stats.totalTime/60)).padStart(2,'0'), s=String(stats.totalTime%60).padStart(2,'0');
-    S('totalTime',`Time: ${m}:${s}`);
+  const S = (id, text) => {
+    const el = document.getElementById(id);
+    if (!el) {
+      console.warn(`[GAME24] missing stat element #${id}`);
+      return;
+    }
+    el.textContent = text;
+  };
+  S('played',    `Played: ${stats.played}`);
+  S('solved',    `Solved: ${stats.solved}`);
+  S('revealed',  `Revealed: ${stats.revealed}`);
+  S('incorrect', `Incorrect: ${stats.incorrect}`);
+  S('skipped',   `Skipped: ${stats.skipped}`);
+  const m = String(Math.floor(stats.totalTime/60)).padStart(2,'0');
+  const s = String(stats.totalTime%60).padStart(2,'0');
+  S('totalTime', `Time: ${m}:${s}`);
+}
+
+  function applyServerStats(s){
+  if (!s) return;
+  console.log('[GAME24] applyServerStats: incoming =', JSON.parse(JSON.stringify(s)));
+ // stats.played     = (s.played        ?? stats.played);
+  //stats.solved     = (s.solved        ?? stats.solved);
+//  stats.revealed   = (s.revealed      ?? stats.revealed);
+//  stats.skipped    = (s.skipped       ?? stats.skipped);
+//  stats.totalTime  = (s.total_time    ?? stats.totalTime);
+//  stats.incorrect  = (s.answer_wrong  ?? stats.incorrect);
+    // Map backend -> local (do NOT Object.assign; do NOT rename the param to "stats")
+  if ('played'       in s) stats.played    = s.played;
+  if ('solved'       in s) stats.solved    = s.solved;
+  if ('revealed'     in s) stats.revealed  = s.revealed;
+  if ('skipped'      in s) stats.skipped   = s.skipped;
+  if ('total_time'   in s) stats.totalTime = s.total_time;
+  if ('answer_wrong' in s) stats.incorrect = s.answer_wrong;
+
+  try {
+  updateStats();
+  }catch (e) {
+    console.error('[GAME24] updateStats failed', e);
   }
+  console.log('[GAME24] applyServerStats: after local =', JSON.parse(JSON.stringify({
+    played: stats.played,
+    solved: stats.solved,
+    revealed: stats.revealed,
+    skipped: stats.skipped,
+    totalTime: stats.totalTime,
+    incorrect: stats.incorrect
+  })));
+}
   function resetLocalStats(){
-    stats.played=stats.solved=stats.revealed=stats.skipped=0;
+    stats.played=stats.solved=stats.revealed=stats.skipped=stats.incorrect=0;
     stats.totalTime=0;
+    countedPlayedThisHand = false;
     updateStats();
   }
 
@@ -185,10 +241,12 @@
     if (el.cards) el.cards.innerHTML = '';
     if (el.question) el.question.textContent = 'Dealing…';
     revealedThisQuestion = false;
+    revealedThisHand = false;
 
     const themeVal = safeValue(el.theme, 'classic');
     const levelVal = safeValue(el.level, 'easy');
     const seqToSend = nextSeq;
+    countedPlayedThisHand = false;
 
     try{
       const url = `${API_BASE}/next?theme=${encodeURIComponent(themeVal)}&level=${encodeURIComponent(levelVal)}&seq=${seqToSend}&client_id=${encodeURIComponent(CLIENT_ID)}&guest_id=${encodeURIComponent(GUEST_ID)}`;
@@ -234,65 +292,141 @@
   }
 
   // ---- check / help ----
-  async function check(){
-    if(!current) return;
-    const exprRaw = (el.answer ? el.answer.value.trim() : '');
-    if(!exprRaw) return;
+async function check(){
+  if (!current) return;
 
-    const expr = preprocess(normalizeRankExpr(exprRaw));
-    try{
-      const r = await fetch(`${API_BASE}/check`, {
-        method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({ values: current.values, answer: expr, client_id: CLIENT_ID, guest_id: GUEST_ID })
-      });
-      const res = await r.json();
-      if(res.ok){
-        if (el.feedback){ el.feedback.textContent='✓'; el.feedback.className='answer-feedback success-icon'; }
-        if (el.msg){ el.msg.textContent = (res.kind==='no-solution') ? 'Correct: no solution' : '24! Correct!'; el.msg.className = 'status status-success'; }
-        timerStop(); addToTotalTime();
-        if (!revealedThisQuestion) { stats.played++; }
-        stats.solved++; updateStats();
-        scheduleNextDeal();
-      } else {
-        if (el.feedback){ el.feedback.textContent='✗'; el.feedback.className='answer-feedback error-icon'; }
-        let msg = res.reason || 'Try again!';
-        if (typeof res.value === 'number') msg += ` (got ${res.value})`;
-        if (el.msg){ el.msg.textContent = msg; el.msg.className = 'status status-error'; }
-        if (!revealedThisQuestion) { stats.played++; updateStats(); }
-      }
-    }catch{ showError('Error checking answer'); }
-  }
+  const exprRaw = el.answer ? el.answer.value.trim() : '';
+  if (!exprRaw) return;
 
-  async function help(all=false){
-    if(!current) return;
-    try{
-      const r = await fetch(`${API_BASE}/help`, {
-        method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({ values: current.values, all, client_id: CLIENT_ID, guest_id: GUEST_ID })
-      });
-      if(!r.ok) throw new Error('help http ' + r.status);
-      const data = await r.json();
-      if (el.msg) el.msg.textContent='';
-      if (el.solutionPanel) el.solutionPanel.style.display='block';
-      if(!data.has_solution){
-        if (el.solutionMsg) el.solutionMsg.textContent='No solution.';
-      } else if (all){
-        if (el.solutionMsg){
-          el.solutionMsg.innerHTML = `Solutions (${data.solutions.length}):`;
-          const grid=document.createElement('div'); grid.className = 'solution-grid';
-          data.solutions.forEach(s=>{ const d=document.createElement('div'); d.textContent=s; grid.appendChild(d); });
-          el.solutionMsg.appendChild(grid);
-        }
-      } else {
-        if (el.solutionMsg) el.solutionMsg.innerHTML = `<strong>Solution:</strong> ${data.solutions[0]}`;
-      }
-      if (!revealedThisQuestion) { stats.played++; stats.revealed++; revealedThisQuestion = true; updateStats(); }
-    }catch{
-      if (el.solutionPanel) el.solutionPanel.style.display='block';
-      if (el.solutionMsg) el.solutionMsg.textContent='Error loading help';
+  // Normalize ranks then normalize operators
+  const expr = preprocess(normalizeRankExpr(exprRaw));
+
+  try {
+    const r = await fetch(`${API_BASE}/check`, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({
+        values: current.values,
+        answer: expr,
+        client_id: CLIENT_ID,
+        guest_id: GUEST_ID
+      })
+    });
+
+    const res = await r.json();
+    console.log('[GAME24] CHECK raw response =', JSON.parse(JSON.stringify(res)));
+
+    // Prefer backend truth when provided
+    const serverStats =
+      (res && (res.stats || res.stats_payload)) ||
+      ((res && (('answer_wrong' in res) || ('played' in res))) ? res : null);
+
+     console.log('[GAME24] CHECK stats source =',
+        res?.stats            ? 'res.stats' :
+        res?.stats_payload    ? 'res.stats_payload' :
+        serverStats === res   ? 'res (top-level)' :
+                                'none');
+
+    if (serverStats) {
+      applyServerStats(serverStats);
     }
-  }
 
+    if (res.ok) {
+      // success UI
+      if (el.feedback) { el.feedback.textContent = '✓'; el.feedback.className = 'answer-feedback success-icon'; }
+      if (el.msg) {
+        el.msg.textContent = (res.kind === 'no-solution') ? 'Correct: no solution' : '24! Correct!';
+        el.msg.className = 'status status-success';
+      }
+      timerStop();
+      addToTotalTime();
+
+      // If server didn't send stats, do minimal local accounting
+      if (!res.stats && !countedPlayedThisHand) {
+        stats.played++;
+        countedPlayedThisHand = true;
+        updateStats();
+      }
+
+      scheduleNextDeal();
+    } else {
+      // wrong UI
+      if (el.feedback) { el.feedback.textContent = '✗'; el.feedback.className = 'answer-feedback error-icon'; }
+      let msg = res.reason || 'Try again!';
+      if (typeof res.value === 'number') msg += ` (got ${res.value})`;
+      if (el.msg) { el.msg.textContent = msg; el.msg.className = 'status status-error'; }
+
+      // If server didn't send stats, do local fallbacks
+      if (!res.stats && !countedPlayedThisHand) {
+        stats.played++;
+        countedPlayedThisHand = true;
+      }
+      if (!res.stats) {
+        stats.incorrect++;
+      }
+      updateStats();
+    }
+  } catch (e) {
+    showError('Error checking answer');
+    console.error('[GAME24] /check error:', e);
+  }
+}
+async function help(showAll = false){
+  if (!current) return;
+
+  try {
+    const r = await fetch(`${API_BASE}/help`, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({
+        values: current.values,
+        all: showAll,
+        client_id: CLIENT_ID,
+        guest_id: GUEST_ID
+      })
+    });
+
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const data = await r.json();
+
+    // Prefer server truth if provided
+    if (data && data.stats) applyServerStats(data.stats);
+
+    // Clear any status line and reveal the solution panel
+    if (el.msg) { el.msg.textContent = ''; el.msg.className = 'status'; }
+    if (el.solutionPanel) el.solutionPanel.style.display = 'block';
+
+    // Render solution(s)
+    if (!data.has_solution) {
+      if (el.solutionMsg) el.solutionMsg.textContent = 'No solution.';
+    } else if (showAll) {
+      if (el.solutionMsg) {
+        el.solutionMsg.innerHTML = `Solutions (${data.solutions.length}):`;
+        const grid = document.createElement('div');
+        grid.className = 'solution-grid';
+        data.solutions.forEach(s => {
+          const d = document.createElement('div');
+          d.textContent = s;
+          grid.appendChild(d);
+        });
+        el.solutionMsg.appendChild(grid);
+      }
+    } else {
+      if (el.solutionMsg) el.solutionMsg.innerHTML = `<strong>Solution:</strong> ${data.solutions[0]}`;
+    }
+
+    // Local fallback accounting if server didn't send stats
+    if (!data?.stats) {
+      if (!countedPlayedThisHand) { stats.played++; countedPlayedThisHand = true; }
+      if (!revealedThisHand)      { stats.revealed++; revealedThisHand = true; }
+      updateStats();
+    }
+  } catch (e) {
+    if (el.solutionPanel) el.solutionPanel.style.display = 'block';
+    if (el.solutionMsg)   el.solutionMsg.textContent = 'Error loading help';
+    console.error('[GAME24] /help error:', e);
+  }
+}
   // ---- load by Case ID (does NOT advance Q counter) ----
   async function loadCaseById(){
     const val = (el.caseIdInput && el.caseIdInput.value) || '';
@@ -329,26 +463,146 @@
     }
   }
 
-  // ---- restart / exit with modals + summary ----
-  function renderSummary(s){
-    const m = Math.floor((s.totalTime||0)/60), sec = (s.totalTime||0)%60;
-    const acc = s.played ? Math.round(((s.solved||0)/s.played)*100) : 0;
+  // static/js/script.js - Fix the summary rendering
+function renderSummary(stats, totalSecs) {
+    const n = (x) => (x == null ? 0 : Number(x));
+    const pad2 = (x) => (x < 10 ? `0${x}` : `${x}`);
+    const fmtTime = (secs) => {
+        secs = Math.max(0, Math.floor(+secs || 0));
+        const m = Math.floor(secs / 60), 
+              s = secs % 60;
+        return `${pad2(m)}:${pad2(s)}`;
+    };
+
+    // Map backend stats to frontend display
+    const totals = {
+        played: n(stats.played),
+        solved: n(stats.solved),
+        revealed: n(stats.revealed),
+        skipped: n(stats.skipped),
+        incorrect: n(stats.answer_wrong || stats.incorrect),
+        timeStr: fmtTime(totalSecs || stats.total_time || 0)
+    };
+
+    // Extract action stats from backend with fallbacks
+    const actions = {
+        attempts: n(stats.answer_attempts) || n(stats.attempts) || 0,
+        correct: n(stats.answer_correct) || n(stats.correct) || 0,
+        wrong: n(stats.answer_wrong) || n(stats.wrong) || n(stats.incorrect) || 0,
+        helpSingle: n(stats.help_single) || n(stats.help_used) || 0,
+        helpAll: n(stats.help_all) || n(stats.help_all_used) || 0,
+        dealSwaps: n(stats.deal_swaps) || n(stats.swaps) || 0
+    };
+
+    // By Difficulty
+    const by = stats.difficulty || {};
+    const order = ['easy', 'medium', 'hard', 'challenge'];
+    const rows = order.map(level => {
+        const r = by[level] || {};
+        const p = n(r.played), s = n(r.solved);
+        const acc = p > 0 ? Math.round((s / p) * 100) + '%' : '—';
+        return `<tr>
+            <td style="text-transform:capitalize">${level}</td>
+            <td style="text-align:center">${p}</td>
+            <td style="text-align:center">${s}</td>
+            <td style="text-align:center">${acc}</td>
+        </tr>`;
+    }).join('');
+
+    const diffTable = `
+        <table style="width:100%; border-collapse:collapse; margin-top:6px">
+            <thead>
+                <tr>
+                    <th style="text-align:left">Level</th>
+                    <th style="text-align:center">Played</th>
+                    <th style="text-align:center">Solved</th>
+                    <th style="text-align:center">Accuracy</th>
+                </tr>
+            </thead>
+            <tbody>${rows}</tbody>
+        </table>`;
+
+    // Actions summary
+    const actionsBlock = `
+        <hr />
+        <div style="margin:6px 0"><strong>Actions</strong></div>
+        <table style="width:100%; border-collapse:collapse">
+            <tbody>
+                <tr><td>Answer attempts</td><td style="text-align:right">${actions.attempts}</td></tr>
+                <tr><td>&nbsp;&nbsp;• Correct</td><td style="text-align:right">${actions.correct}</td></tr>
+                <tr><td>&nbsp;&nbsp;• Wrong / Invalid</td><td style="text-align:right">${actions.wrong}</td></tr>
+                <tr><td>Help used</td><td style="text-align:right">${actions.helpSingle}</td></tr>
+                <tr><td>Help-All used</td><td style="text-align:right">${actions.helpAll}</td></tr>
+                <tr><td>Deal swaps (no action before next deal)</td><td style="text-align:right">${actions.dealSwaps}</td></tr>
+            </tbody>
+        </table>
+    `;
+
+    // Pool Progress
+    let poolBlock = '';
+    if (stats.pool_mode && (stats.pool_len || 0) > 0) {
+        const len = n(stats.pool_len);
+        const scoreMap = stats.pool_score || {};
+        const solvedInPool = Object.values(scoreMap).reduce((a, b) => a + (parseInt(b, 10) || 0), 0);
+        const unfinished = (stats.unfinished || []).slice().sort((a, b) => a - b);
+        const unfinishedStr = unfinished.length ? unfinished.map(id => `#${id}`).join(', ') : '';
+
+        poolBlock = `
+            <hr />
+            <div style="margin:6px 0">
+                <strong>Pool Progress</strong>
+                <span style="opacity:.7">(${stats.pool_mode}, ${len} case${len === 1 ? '' : 's'})</span>
+            </div>
+            <div><em>Solved in pool:</em> ${solvedInPool} / ${len}</div>
+            ${unfinishedStr ? `<div><em>Unfinished:</em> ${unfinishedStr}</div>` : ''}
+        `;
+    }
+
+    // Assemble
     return `
-      <div style="display:grid;grid-template-columns:repeat(5,auto);gap:10px;margin:10px 0 16px">
-        <div><strong>Played:</strong> ${s.played||0}</div>
-        <div><strong>Solved:</strong> ${s.solved||0}</div>
-        <div><strong>Revealed:</strong> ${s.revealed||0}</div>
-        <div><strong>Skipped:</strong> ${s.skipped||0}</div>
-        <div><strong>Time:</strong> ${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}</div>
-      </div>`;
+        <div style="display:grid; grid-template-columns: repeat(6, auto); gap:10px; margin-bottom:8px">
+            <div><strong>Played:</strong> ${totals.played}</div>
+            <div><strong>Solved:</strong> ${totals.solved}</div>
+            <div><strong>Revealed:</strong> ${totals.revealed}</div>
+            <div><strong>Skipped:</strong> ${totals.skipped}</div>
+            <div><strong>Incorrect:</strong> ${totals.incorrect}</div>
+            <div><strong>Time:</strong> ${totals.timeStr}</div>
+        </div>
+        <div><strong>By Difficulty</strong></div>
+        ${diffTable}
+        ${actionsBlock}
+        ${poolBlock}
+    `;
+}
+  async function exitAndShowSummary() {
+    try {
+      const r = await fetch(`${API_BASE}/exit`, {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ client_id: window.CLIENT_ID, guest_id: window.GUEST_ID })
+      });
+      if (!r.ok) throw new Error('exit http ' + r.status);
+      const j = await r.json();
+      if (!j || j.ok !== true) throw new Error('exit payload');
+      const html = renderSummary(j.stats || {}, getTotalSeconds());
+      showSummaryModal(html);
+    } catch (e) {
+      console.error('[exitAndShowSummary]', e);
+      alert('Could not load session summary.');
+    }
   }
+  window.exitAndShowSummary = exitAndShowSummary;
+
   function showSummaryAndGo(statsObj, url){
     if (el.summaryBackdrop && el.summaryBody && el.summaryOk && el.summaryClose){
-      el.summaryBody.innerHTML = renderSummary(statsObj);
+      //el.summaryBody.innerHTML = renderSummary(statsObj);
+      el.summaryBody.innerHTML = renderSummary(statsObj, totalTime);
       showModal(el.summaryBackdrop);
       const go = () => { hideModal(el.summaryBackdrop); window.location.href = url; };
       el.summaryOk.onclick = go; el.summaryClose.onclick = go;
-      setTimeout(go, 1500);
+      if (autoCloseSummary) {
+        setTimeout(go, 1500);
+      }
     }else{
       alert('Session Finished');
       window.location.href = url;
@@ -377,8 +631,21 @@
         body: JSON.stringify({ client_id: CLIENT_ID, guest_id: GUEST_ID })
       }).then(r => r.json()).catch(()=>null);
     } catch {}
+    console.log('[EXIT] Backend response:', resp);
     const nextUrl = (resp && resp.next_url) ? resp.next_url : '/';
+      // Use server stats if available, otherwise fall back to local
+    const serverStats = resp && resp.stats ? resp.stats : stats;
+    const totalTime = serverStats.total_time || stats.totalTime;
+
     // Use local mirrors for a quick summary
+    console.log('[GAME24] doExit: before showSummaryAndGo =', JSON.parse(JSON.stringify({
+    played: stats.played,
+    solved: stats.solved,
+    revealed: stats.revealed,
+    skipped: stats.skipped,
+    totalTime: stats.totalTime,
+    incorrect: stats.incorrect
+  })));
     showSummaryAndGo(stats, nextUrl);
   }
 
