@@ -4,6 +4,7 @@ from typing import Dict, Any, List
 import random, time
 from flask import url_for
 import re
+import logging
 
 # -------------------------------
 # Values / difficulty helpers
@@ -30,6 +31,7 @@ def normalize_rank_expr(expr: str) -> str:
     Matches whole tokens only, so variables like 'AK' aren't replaced.
     """
     if not expr:
+        logger.debug("normalize_rank_expr, received not expr: %r",expr)
         return expr
     def repl(m: re.Match) -> str:
         return _RANK_TO_NUM[m.group(1).upper()]

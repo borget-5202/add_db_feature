@@ -2,7 +2,7 @@
 from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Any, List, Tuple, Optional
+from typing import Dict, Any, List, Tuple, Optional, Callable
 import json, random, logging
 
 from flask import current_app
@@ -59,9 +59,16 @@ class Game24Store:
         p = self.by_key.get(values_key(values))
         return self._to_payload(p) if p else None
 
-    def random_pick(self, level: str, recent_keys: List[str]) -> Tuple[Optional[Dict[str, Any]], bool]:
+    def random_pick(
+        self,
+        level: str,
+        recent_keys: List[str],
+        eligible: Optional[Callable[[int], bool]] = None
+    ) -> Tuple[Optional[Dict[str, Any]], bool]:
         """
-        Return (puzzle_payload, pool_done). Avoids immediate repeats via recent_keys.
+        Return (puzzle_payload, pool_done).
+        - Avoids immediate repeats via recent_keys.
+        - If 'eligible' is provided, only returns puzzles with eligible(case_id) == True.
         """
         lvl = normalize_level(level)
         pool_name = (
@@ -74,13 +81,25 @@ class Game24Store:
         if not pool:
             return None, False
 
-        recent = set(recent_keys[-50:])
-        candidates = [t for t in pool if t[2] not in recent]
+        # 1) Apply eligibility first (if provided)
+        base_candidates = pool
+        if eligible is not None:
+            base_candidates = [t for t in pool if eligible(int(t[0].case_id))]
+
+        # If nothing is eligible, the pool for this session/level is exhausted
+        if not base_candidates:
+            return None, True
+
+        # 2) Avoid very recent repeats using your existing values_key scheme
+        recent = set(recent_keys[-50:] or [])
+        candidates = [t for t in base_candidates if t[2] not in recent]
+
+        # 3) If avoiding repeats empties the set, allow a repeat but signal "done"
         if not candidates:
-            # allow a repeat and signal that we’re “done” with avoidance
-            choice = random.choice(pool)
+            choice = random.choice(base_candidates)
             return self._to_payload(choice[0]), True
 
+        # 4) Pick uniformly from remaining candidates
         choice = random.choice(candidates)
         return self._to_payload(choice[0]), False
 
