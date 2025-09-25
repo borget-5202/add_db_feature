@@ -79,16 +79,18 @@
     </div>
   </div>
 
-  <!-- Summary Modal -->
+  <!-- SINGLE Summary Modal (rich) -->
   <div class="modal-backdrop" id="summaryBackdrop" role="dialog" aria-modal="true" style="display:none;">
     <div class="modal">
       <div class="modal-head">
         <h3>Session Summary</h3>
         <button class="close" id="summaryClose" style="cursor:pointer">✕</button>
       </div>
-      <div id="summaryBody"></div>
-      <div style="margin-top:12px; display:flex; gap:8px; justify-content:flex-end;">
-        <button id="summaryOk" class="primary-btn">OK</button>
+      <div id="summary-report" style="max-height:50vh; overflow:auto;"></div>
+      <div class="actions" style="margin-top:12px; display:flex; gap:8px; justify-content:flex-end;">
+        <a id="summaryCsv" class="primary-btn" href="#" target="_blank" rel="noopener" style="display:none">Download CSV</a>
+        <button id="summaryExit" class="danger-btn">Exit Game</button>
+        <button id="summaryResume" class="secondary-btn">Resume</button>
       </div>
     </div>
   </div>
@@ -109,6 +111,18 @@
             <summary>Settings</summary>
 
             <div class="settings-row">
+	      <select id="targetSelect" class="target">
+               <option value="24">Target: 24</option>
+               <option value="10">Target: 10</option>
+               <option value="36">Target: 36</option>
+	       <option value="custom">Custom…</option>
+             </select>
+	     <input id="targetCustom" type="number" min="-100" max="100" step="1"
+                 placeholder="Enter target" style="display:none;width:6rem;">
+             <button id="applyTarget" type="button" style="display:none;">Apply</button>
+
+	     <label><input id="solvableOnly" type="checkbox" checked> Solvable only</label>
+
               <label>Theme
                 <select id="theme">
                   <option value="classic">Classic</option>
@@ -136,6 +150,7 @@
               </label>
             </div>
 
+            <!-- Custom/Competition pool -->
             <div class="settings-row" id="casePoolRow" style="display:none;">
               <label for="casePoolInput" style="display:block;">Case Pool (IDs)</label>
 
@@ -152,6 +167,7 @@
               <small class="muted block">Custom: help enabled. Competition: help disabled, timed play.</small>
             </div>
 
+            <!-- Jump to a specific case -->
             <div class="settings-row">
               <label>Jump to Case ID:
                 <input type="number" id="caseIdInput" placeholder="e.g., 1259"
@@ -209,6 +225,7 @@
           <button id="help" class="info-btn">Help (H)</button>
           <button id="helpAll" class="info-btn">Help All (Shift+H)</button>
           <button id="restart" class="danger-btn">Restart(R)</button>
+          <button id="summaryBtn" class="secondary-btn">Peek (Shift+S)</button>
           <button id="exit" class="secondary-btn">Exit(X)</button>
         </div>
 
@@ -247,7 +264,9 @@
           <li>Use each of the 4 numbers exactly once to make <b>24</b>.</li>
           <li>Allowed: <b>+</b> <b>−</b> <b>*</b> <b>/</b> <b>^</b> (power) and parentheses.</li>
           <li>Ranks: <b>A=1</b>, <b>J=11</b>, <b>Q=12</b>, <b>K=13</b>, <b>T=10</b>.</li>
-          <li>Shortcuts: <b>Enter=Check</b>, <b>D=Deal</b>, <b>N=No solution</b>, <b>H</b>/<b>Shift+H</b> help, <b>R</b> restart, <b>X</b> exit.</li>
+          <li>Shortcuts: <b>Enter</b>=Check, <b>D</b>=Deal, <b>N</b>=No solution,
+              <b>H</b>/<b>Shift+H</b>=Help, <b>R</b>=Restart, <b>X</b>=Exit,
+              <b>Shift+S</b>=Peek Summary.</li>
         </ul>
       </div>
 
@@ -268,30 +287,33 @@
     </div>
   </div>
 
-  <!-- Summary Modal -->
-  <div class="modal-backdrop" id="summaryBackdrop" role="dialog" aria-modal="true" style="display:none;">
-    <div class="modal">
-      <div class="modal-head">
-        <h3>Session Summary</h3>
-        <button class="close" id="summaryClose" style="cursor:pointer">✕</button>
-      </div>
-      <div id="summaryBody"></div>
-      <div style="margin-top:12px; display:flex; gap:8px; justify-content:flex-end;">
-        <button id="summaryOk" class="primary-btn">OK</button>
-      </div>
+
+    <!-- Report goes here -->
+
+<!-- ===== Generic Confirm Modal (used for Restart) ===== -->
+<div id="confirmBackdrop" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.4); z-index:1001; align-items:center; justify-content:center;">
+  <div style="background:#fff; width:min(520px,95vw); border-radius:12px; padding:16px;">
+    <h3 id="confirmTitle" style="margin:0 0 8px;">Are you sure?</h3>
+    <p id="confirmMsg" style="margin:0 0 16px;">This will restart your session.</p>
+    <div style="display:flex; gap:8px; justify-content:flex-end;">
+      <button id="confirmCancel" type="button">Cancel</button>
+      <button id="confirmOK" type="button" class="destructive">Yes</button>
     </div>
   </div>
+</div>
 
-<script nonce="{{ csp_nonce }}">
-  (function () {
-    var base = "{{ url_for('game24.play')|replace('/play','') }}";
-    window.GAME24_API_BASE = base + "/api";
-    window.GAME24_STATIC_BASE = "{{ url_for('games_assets_bp.static', filename='') }}".replace(/\/$/, '');
-    window.CARD_IMG_BASE = "{{ url_for('games_assets_bp.static', filename='cards/') }}";
-    console.log("[GAME24] API_BASE:", window.GAME24_API_BASE);
-  })();
-</script>
-<script src="{{ url_for('game24.static', filename='js/script.js') }}"></script>
+  <script nonce="{{ csp_nonce }}">
+    (function () {
+      var base = "{{ url_for('game24.play')|replace('/play','') }}";
+      window.GAME24_API_BASE = base + "/api";
+      window.GAME24_STATIC_BASE = "{{ url_for('games_assets_bp.static', filename='') }}".replace(/\/$/, '');
+      window.CARD_IMG_BASE = "{{ url_for('games_assets_bp.static', filename='cards/') }}";
+      window.INIT_TARGET = {{ init_target if init_target is not none else 'null' }};
+      console.log("[GAME24] API_BASE:", window.GAME24_API_BASE);
+      console.log("[GAME24] INIT_TARGET:", window.INIT_TARGET);
+    })();
+  </script>
+  <script src="{{ url_for('game24.static', filename='js/script.js') }}"></script>
 
 </body>
 </html>
