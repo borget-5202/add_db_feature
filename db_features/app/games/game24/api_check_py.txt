@@ -1,0 +1,106 @@
+def _solutions_for(values: List[int]) -> Tuple[List[str], bool]:
+    """
+    Ask the store for solutions. Fallbacks to different method names for safety.
+    Returns (solutions, has_solution).
+    """
+    store = get_store()
+    try:
+        sols = store.solve(values)  # preferred
+    except AttributeError:
+        try:
+            sols = store.get_solutions(values)  # alt
+        except AttributeError:
+            sols = []
+    sols = sols or []
+    return sols, (len(sols) > 0)
+
+
+# -----------------------------------------------------------------------------
+# API: Check (answer)
+# -----------------------------------------------------------------------------
+@bp.post("/api/check")
+def api_check():
+    logger.info("=== api_check CALLED ===")
+    debug_stats_state(_state(), "check_start")
+    state = _state()
+    data = request.get_json(force=True) or {}
+
+    values = data.get("values") or data.get("vals")
+    answer = (data.get("answer") or "").strip()
+    case_id = data.get("case_id")
+
+    logger.info("Check case_id: %s, values: %s, answer: %s", case_id, values, answer)
+
+    if not values or not isinstance(values, list):
+        return jsonify({"ok": False, "reason": "Missing or invalid values"}), 400
+
+    ensure_played_once(state, )
+    logger.debug("api_check received from frontend: raw stats_payload: %r", stats_payload(state))
+
+    # Support "no solution" fast-path
+    if answer.lower() in {"no solution", "nosolution", "no-solution", "n", "0", "-1"}:
+        sols, has_sol = _solutions_for(values)
+        correct = (not has_sol)
+        #bump_attempt(state, correct=correct)
+        debug_bump_attempt(state, correct=correct)
+        if correct:
+            # mark as solved (no-solution is considered a correct answer)
+            #bump_solved(state, state.get("current_effective_level"))
+            debug_bump_solved(state, state.get("current_effective_level"))
+            cur = _current_hand(state)
+            if cur:
+                cur["solved"] = True
+                cur["final_outcome"] = "solved_no_help"
+                cur["ended_at_ms"] = now_ms()
+            _set_case_solved(state, state.get("current_case_id") or -1)
+            return jsonify({"ok": True, "kind": "no-solution", "stats": stats_payload(state)}), 200
+        else:
+            cur = _current_hand(state)
+            if cur:
+                cur["attempts"] += 1
+                cur["incorrect_attempts"] += 1
+            return jsonify({"ok": False, "reason": "This hand actually has solutions.", "stats": stats_payload(state)}), 200
+
+    # Normalize and basic syntax check
+    norm = _normalize_expr(answer)
+    # ensure numbers match the four cards
+    if not _expr_uses_exact_values(norm, values):
+        bump_attempt(state, correct=False)
+        cur = _current_hand(state)
+        if cur:
+            cur["attempts"] += 1
+            cur["incorrect_attempts"] += 1
+        return jsonify({"ok": False, "reason": "Expression must use each card exactly once."}), 200
+
+    # Evaluate
+    try:
+        val = _safe_eval_number(norm)
+    except Exception:
+        bump_attempt(state, correct=False)
+        cur = _current_hand(state)
+        if cur:
+            cur["attempts"] += 1
+            cur["incorrect_attempts"] += 1
+        return jsonify({"ok": False, "reason": "Unsafe or invalid expression"}), 200
+
+    correct = abs(val - 24.0) < 1e-6
+    bump_attempt(state, correct=correct)
+
+    cur = _current_hand(state)
+    if not correct:
+        if cur:
+            cur["attempts"] += 1
+            cur["incorrect_attempts"] += 1
+        return jsonify({"ok": False, "reason": "Try again!"}), 200
+
+    # mark solved
+    bump_solved(state, state.get("current_effective_level"))
+    if cur:
+        cur["attempts"] += 1
+        cur["solved"] = True
+        cur["final_outcome"] = "solved_with_help" if cur.get("helped") else "solved_no_help"
+        cur["ended_at_ms"] = now_ms()
+    _set_case_solved(state, state.get("current_case_id") or -1)
+    logger.debug("api_check sent to frontend: raw stats_payload: %r", stats_payload(state))
+    return jsonify({"ok": True, "kind": "exact", "stats": stats_payload(state)}), 200
+
