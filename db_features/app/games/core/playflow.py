@@ -17,6 +17,7 @@ class PlayInstance:
     skipped: bool = False
     solved: bool = False
     final_outcome: Optional[Outcome] = None
+    level: str | None = None
 
     def mark_end(self, outcome: Outcome):
         if self.ended_at_ms is None:
@@ -32,11 +33,11 @@ class Playflow:
     items: Dict[int, PlayInstance] = field(default_factory=dict)  # case_id -> PlayInstance
 
     # ---- lifecycle ----
-    def start_puzzle(self, case_id: int):
+    def start_puzzle(self, case_id: int, level: str | None = None):
         # If a previous puzzle is hanging, finalize it as unsolved_exit
         if self.current and not self.current.final_outcome:
             self.current.mark_end('unsolved_exit')
-        pi = PlayInstance(case_id=case_id)
+        pi = PlayInstance(case_id=case_id, level=(level.lower() if level else None))
         self.items[case_id] = pi
         self.current = pi
 
@@ -83,13 +84,26 @@ class Playflow:
     # ---- readout ----
     def summary(self, finalize: bool = True) -> Dict:
         from html import escape
+        from collections import defaultdict
+
         # Close any dangling current puzzle politely
         if finalize and self.current and not self.current.final_outcome:
             self.reveal_finalize_if_needed()
     
         totals = dict(solved=0, helped=0, incorrect=0, skipped=0)
         per_puzzle: List[Dict] = []
-    
+        by_level = defaultdict(lambda: {"played": 0, "solved": 0})
+        for cid, it in self.items.items():
+            lvl = (it.level or "unknown")
+            by_level[lvl]["played"] += 1
+            if it.solved:
+                by_level[lvl]["solved"] += 1
+        
+        # compute accuracy as a percent string
+        for lvl, d in by_level.items():
+            p = d["played"] or 1
+            d["accuracy"] = f"{round(100 * d['solved'] / p)}%"
+
         buckets = dict(
             solved_ids=[],
             solved_no_help_ids=[],
@@ -168,6 +182,11 @@ class Playflow:
             f"  First-try correct [{len(buckets['first_try_correct_ids'])}]: {f(buckets['first_try_correct_ids'])}",
             f"  Struggled but solved [{len(buckets['struggle_before_solve_ids'])}]: {f(buckets['struggle_before_solve_ids'])}",
         ]
+        report_lines += ["", "By Level"]
+        for lvl in sorted(by_level.keys()):
+            d = by_level[lvl]
+            report_lines.append(f"  {lvl:9}  played={d['played']:<3}  solved={d['solved']:<3}  acc={d['accuracy']}")
+
         report_text = "\n".join(report_lines)
     
         # Minimal clean HTML snippet (drop-in to your panel)
@@ -197,6 +216,16 @@ class Playflow:
       </div>
     </section>""".strip()
     
+        rows = "".join(
+    f"<tr><td>{escape(lvl)}</td><td>{d['played']}</td><td>{d['solved']}</td><td>{d['accuracy']}</td></tr>"
+    for lvl, d in sorted(by_level.items())
+    )
+        report_html += f"""
+          <table class="ps-table">
+            <thead><tr><th>Level</th><th>Played</th><th>Solved</th><th>Accuracy</th></tr></thead>
+            <tbody>{rows}</tbody>
+          </table>
+        """
         return dict(
             session_uuid=self.session_uuid,
             started_at_ms=self.started_at_ms,
@@ -204,6 +233,7 @@ class Playflow:
             totals=totals,
             per_puzzle=per_puzzle,
             buckets=buckets,
+            by_level=dict(by_level),
             report_text=report_text,   # NEW
             report_html=report_html,   # NEW
         )
