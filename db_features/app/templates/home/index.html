@@ -1,12 +1,30 @@
-<!--/* app/templates/home/index.html */-->
+<!-- app/templates/home/index.html -->
 <!doctype html>
 <html>
   <body>
     <h1>Choose a Fun Game</h1>
+
     <ul>
       {% for g in games %}
         <li><a href="{{ url_for(g.key + '.play') }}">{{ g.name }}</a></li>
       {% endfor %}
     </ul>
+
+    <h2>Quick Start by Target</h2>
+    <ul>
+      <li><a href="{{ url_for('game24.play', target=24) }}">Play 24-Point</a></li>
+      <li><a href="{{ url_for('game24.play', target=10) }}">Play 10-Point</a></li>
+      <li><a href="{{ url_for('game24.play', target=36) }}">Play 36-Point</a></li>
+    </ul>
+
+    <h3>Pick You Like -- Custom target </h3>
+    <form action="{{ url_for('game24.play') }}" method="get" style="display:flex;gap:.5rem;align-items:center;">
+      <label>Target:
+        <input name="target" type="number" min="-100" max="100" step="1" value="24" style="width:6rem;">
+      </label>
+      <button type="submit">Play</button>
+    </form>
+
   </body>
 </html>
+
