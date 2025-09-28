@@ -95,6 +95,11 @@ def now_ms() -> int:
 
 def _get_target(state: Dict[str, Any], data: Optional[dict] = None) -> int:
     """Resolve target from JSON body or query args or state; default 24."""
+    logger.info("=== _get_target DEBUG ===")
+    logger.info("Request args: %s", dict(request.args))
+    logger.info("Request JSON data: %s", data)
+    logger.info("Current state keys: %s", list(state.keys()))
+    logger.info("Current state target: %s", state.get("target"))
     if data and "target" in data:
         try:
             t = int(data["target"])
@@ -462,10 +467,13 @@ def api_next():
 
     # Read and store the selected target (default 24)
     target = _get_target(state)  # from args/state
+    logger.info("Using target: %d", target)
     theme = (request.args.get("theme") or "classic").strip().lower()
     level = (request.args.get("level") or "easy").strip().lower()
     seq = int(request.args.get("seq") or 0)
     case_id_param = request.args.get("case_id")
+    # Log the actual target being used
+    logger.info("Using target: %d (from state: %s)", target, state.get("target", 24))
 
     # Finalize unfinished hand before dealing a new one
     cur = _current_hand(state)
@@ -510,6 +518,7 @@ def api_next():
             "pool_done": bool(pool_done),
             "target": int(state.get("target", 24)),
             "stats": stats_payload(state),
+            "meta": {"reveal": "all"},
         }
         tl = competition_time_left(state)
         if tl is not None:
@@ -522,6 +531,8 @@ def api_next():
             payload["pool_done"],
             payload["target"],
         )
+        logger.debug("[build_payload] case_id=%s vals=%s images=%s url=%s",
+                 payload["case_id"], vals, [i["code"] for i in payload["images"]], [i["url"] for i in payload["images"]])
         logger.debug("api_next send to frontend: raw stats_payload: %r", stats_payload(state))
         return payload
 
@@ -587,7 +598,23 @@ def api_next():
                 _begin_hand(state, int(puz["case_id"]), level)
                 state["current_case_id"] = int(puz["case_id"])
                 _mark_case_status(state, int(puz["case_id"]), "shown")
-                return jsonify(build_payload(puz, pool_done=p["done"])), 200
+                
+                # Build payload and add pool_info
+                payload = build_payload(puz, pool_done=p["done"])
+                
+                # Add pool progress information
+                payload["pool_info"] = {
+                    "mode": p.get("mode"),
+                    "current_index": idx,
+                    "total_count": len(ids),
+                    "remaining": len(ids) - idx - 1,  # Puzzles remaining after this one
+                    "is_last_puzzle": (idx == len(ids) - 1)
+                }
+                
+                logger.info("Pool progress: index=%d, total=%d, remaining=%d, is_last=%s", 
+                           idx, len(ids), len(ids) - idx - 1, (idx == len(ids) - 1))
+                
+                return jsonify(payload), 200
 
     # -- Normal random pick
     logger.info("Normal random pick for level: %s", level)
@@ -600,18 +627,9 @@ def api_next():
             logger.info("random_pick result: %s", puz["case_id"])
         else:
             logger.warning("random_pick returned None")
-        #puz, pool_done = store.random_pick(level, state.get("recent_keys") or [])
-        #logger.info("random_pick result: %s, pool_done: %s", puz["case_id"] if puz else "None", pool_done)
     except TypeError as e:
         logger.error("random_pick TypeError: %s - using fallback", e)
         puz, pool_done = None, False
-
-        #try:
-        #    puz = store.random_pick(level)
-        #    logger.info("Fallback random_pick: %s", puz["case_id"] if puz else "None")
-        #except Exception as fallback_error:
-        #    logger.error("Fallback also failed: %s", fallback_error)
-        #    puz = None
 
     if puz:
         try:
@@ -825,10 +843,12 @@ def api_help():
 @bp.post("/api/skip")
 def api_skip():
     logger.info("=== api_skip CALLED ===")
-    sid = _sid()
-    logger.info("API_SKIP Session ID: %s", sid)
     state = _state()
-    _debug_sid("api_skip")
+    data = request.get_json(force=True) or {}
+
+    # 🔥 UPDATE TARGET FROM SKIP REQUEST TOO
+    target = _get_target(state, data)
+    logger.info("Skip using target: %d", target)
 
     bump_played_once(state)
     bump_skipped(state)
@@ -962,7 +982,23 @@ def _build_summary(state: Dict[str, Any]) -> Dict[str, Any]:
             acc = (row["solved"] * 100.0 / row["played"]) if row["played"] else 0.0
             lines.append(f"  {lvl:<10} played={row['played']:<4} solved={row['solved']:<4} acc={acc:.0f}%")
 
-    report_html = "<pre>" + "\n".join(lines) + "</pre>"
+    # --- Detailed per-hand Actions (case_id, attempts, helped/solved/skipped) ---
+    act = []
+    act.append("")
+    act.append("Actions")
+    for r in per:
+        cid = int(r.get("case_id") or 0)
+        att = int(r.get("attempts") or 0)
+        inc = int(r.get("incorrect_attempts") or 0)
+        h   = "Y" if r.get("helped") else "N"
+        sk  = "Y" if r.get("skipped") else "N"
+        sv  = "Y" if r.get("solved") else "N"
+        tgt = r.get("target") if r.get("target") is not None else ""
+        line = f"  #{cid:<4} attempts={att:<2} wrong={inc:<2} helped={h} skipped={sk} solved={sv}"
+        if tgt != "": line += f" target={tgt}"
+        act.append(line)
+    report_html = "<pre>" + "\n".join(lines + act) + "</pre>"
+
     return {
         "totals": totals,
         "buckets": buckets,
@@ -1072,7 +1108,7 @@ def api_export_csv():
     csv_bytes = buf.getvalue().encode("utf-8")
     resp = make_response(csv_bytes)
     resp.headers["Content-Type"] = "text/csv; charset=utf-8"
-    resp.headers["Content-Disposition"] = "attachment; filename=game24_session.csv"
+    resp.headers["Content-Disposition"] = f"attachment; filename=game24_session_{int(time.time()*1000)}.csv"
     return resp
 
 # -----------------------------------------------------------------------------
