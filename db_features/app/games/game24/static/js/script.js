@@ -9,6 +9,8 @@ const API_BASE =
 
 const STATIC_BASE  = (typeof window !== 'undefined' && window.GAME24_STATIC_BASE) ? window.GAME24_STATIC_BASE : '';
 const CARD_IMG_BASE= (STATIC_BASE ? (STATIC_BASE + '/cards/') : '/games/assets/cards/');
+const CARD_BACK = (CARD_IMG_BASE.endsWith('/') ? CARD_IMG_BASE + 'back.png' : CARD_IMG_BASE + '/back.png');
+const CARD_VOID = (CARD_IMG_BASE.endsWith('/') ? CARD_IMG_BASE + 'void.png' : CARD_IMG_BASE + '/void.png');
 
 console.log('[GAME24] Using API_BASE:', API_BASE);
 console.log('[GAME24] Using STATIC_BASE:', STATIC_BASE);
@@ -20,6 +22,7 @@ if (typeof window.INIT_TARGET !== 'undefined' && window.INIT_TARGET !== null) {
   TARGET = window.INIT_TARGET;
   localStorage.setItem('target_g24', String(TARGET));
 }
+
 
 (function initTargetFromURL(){
   try {
@@ -96,6 +99,18 @@ const el = {
   timer: $('#timer'),
 };
 
+// --- Modal helpers (shared) ---
+function showModal(backdrop){
+  if (!backdrop) return;
+  backdrop.style.display = 'flex';
+  requestAnimationFrame(()=> backdrop.classList.add('modal-visible'));
+}
+function hideModal(backdrop){
+  if (!backdrop) return;
+  backdrop.classList.remove('modal-visible');
+  setTimeout(()=>{ backdrop.style.display='none'; }, 220);
+}
+
 /* =========================
    Target (24 / 10 / 36)
 ========================= */
@@ -108,6 +123,7 @@ function setTarget(t){
   const clamped = Number.isFinite(n) ? Math.max(-100, Math.min(100, n)) : 24;
   window.TARGET = clamped;               // just set it
   localStorage.setItem('target_g24', String(clamped));
+  //showPreDeal();
 }
 
 (function initTarget(){
@@ -246,6 +262,135 @@ function setGameplayEnabled(enabled){
     });
   }
 }
+function getCurrentSettings() {
+  // Read from the actual UI elements
+  const targetSelect = document.getElementById('targetSelect');
+  const targetCustom = document.getElementById('targetCustom');
+
+  let currentTarget = TARGET; // fallback to global
+
+  // If custom target is visible, use its value
+  if (targetCustom && targetCustom.style.display !== 'none') {
+    const customVal = parseInt(targetCustom.value);
+    if (!isNaN(customVal)) {
+      currentTarget = customVal;
+    }
+  }
+  // Otherwise use the dropdown value
+  else if (targetSelect) {
+    const selectVal = targetSelect.value;
+    if (selectVal !== 'custom') {
+      currentTarget = parseInt(selectVal);
+    }
+  }
+  const settings = {
+    target: currentTarget,
+    theme: (el.theme && el.theme.value) ? el.theme.value : 'classic',
+    level: (el.level && el.level.value) ? el.level.value : 'easy'
+  };
+
+  // 🔥 ADD THIS LOGGING
+  console.log('🔧 getCurrentSettings() returned:', settings);
+  console.log('   - TARGET global variable:', TARGET);
+  console.log('   - targetSelect value:', targetSelect ? targetSelect.value : 'N/A');
+  console.log('   - targetCustom value:', targetCustom ? targetCustom.value : 'N/A');
+  console.log('   - targetCustom display:', targetCustom ? targetCustom.style.display : 'N/A');
+
+  return settings;
+}
+  function resetToEasyMode() {
+  console.log('🔄 Resetting to easy mode...');
+  
+  // Reset UI to easy mode
+  if (el.level) el.level.value = 'easy';
+  localStorage.setItem('level', 'easy');
+  
+  // Re-enable auto-deal
+  autoDealEnabled = true;
+  if (el.autoDeal) el.autoDeal.checked = true;
+  localStorage.setItem('autoDeal_g24', 'true');
+  
+  // Clear pool settings
+  localStorage.removeItem('casePoolText');
+  localStorage.removeItem('compDurationMin');
+  
+  // Clear backend pool
+  fetch(`${API_BASE}/pool`, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({
+      mode: 'off',
+      client_id: CLIENT_ID,
+      guest_id: GUEST_ID
+    })
+  }).catch(console.warn);
+  
+  // Update UI
+  updateCasePoolUI();
+  showPreDeal();
+}
+
+/* =========================
+   Initialize Settings with Safe Defaults
+========================= */
+(function initializeSettings() {
+  const savedLevel = localStorage.getItem('level');
+  const savedPoolText = localStorage.getItem('casePoolText');
+  const qp = new URLSearchParams(location.search);
+  const qsLevel = qp.get('level');
+  
+  // Parse the saved pool to see if it has valid puzzles
+  function hasActivePool() {
+    if (!savedPoolText) return false;
+    const parts = savedPoolText.split(/[\s,\|]+/g).filter(Boolean);
+    const validPuzzles = parts.filter(p => {
+      const n = parseInt(p, 10);
+      return !isNaN(n) && n >= 1 && n <= 1820;
+    });
+    return validPuzzles.length > 0;
+  }
+  
+  const hasValidPool = hasActivePool();
+  console.log('🔍 Pool check - level:', savedLevel, 'hasValidPool:', hasValidPool, 'poolText:', savedPoolText);
+  
+  // Decision logic: only reset if we're in pool mode BUT have no valid pool
+  if ((savedLevel === 'custom' || savedLevel === 'competition') && !hasValidPool) {
+    console.log('🔁 In pool mode but no valid pool - resetting to easy');
+    resetToEasyMode();
+    return;
+  }
+  
+  // Respect URL parameter if present, otherwise use saved preference
+  let initialLevel = 'easy';
+  
+  if (qsLevel && (qsLevel === 'easy' || qsLevel === 'medium' || qsLevel === 'hard' || qsLevel === 'custom' || qsLevel === 'competition')) {
+    initialLevel = qsLevel;
+  } else if (savedLevel && (savedLevel === 'easy' || savedLevel === 'medium' || qsLevel === 'hard' || savedLevel === 'custom' || savedLevel === 'competition')) {
+    initialLevel = savedLevel;
+  }
+  
+  // Set the level in UI and storage
+  if (el.level) el.level.value = initialLevel;
+  if (initialLevel !== savedLevel) {
+    localStorage.setItem('level', initialLevel);
+  }
+  
+  // Initialize auto-deal from storage or default to true
+  const autoDealSaved = localStorage.getItem('autoDeal_g24');
+  if (autoDealSaved !== null) {
+    autoDealEnabled = (autoDealSaved === 'true');
+    if (el.autoDeal) el.autoDeal.checked = autoDealEnabled;
+  } else {
+    autoDealEnabled = true;
+    if (el.autoDeal) el.autoDeal.checked = true;
+    localStorage.setItem('autoDeal_g24', 'true');
+  }
+  
+  // Update UI based on initial level
+  updateCasePoolUI();
+  
+  console.log('🔧 Initialized settings - level:', initialLevel, 'autoDeal:', autoDealEnabled, 'hasValidPool:', hasValidPool);
+})();
 
 /* =========================
    Stats UI
@@ -284,84 +429,419 @@ function resetLocalStats(){
   stats.totalTime = 0;
   updateStats();
 }
+function resetToEasyMode() {
+  console.log('🔄 Resetting to easy mode...');
+  
+  // Reset UI to easy mode
+  if (el.level) el.level.value = 'easy';
+  localStorage.setItem('level', 'easy');
+  
+  // Re-enable auto-deal
+  autoDealEnabled = true;
+  if (el.autoDeal) el.autoDeal.checked = true;
+  localStorage.setItem('autoDeal_g24', 'true');
+  
+  // Clear pool settings
+  localStorage.removeItem('casePoolText');
+  localStorage.removeItem('compDurationMin');
+  
+  // Clear backend pool
+  fetch(`${API_BASE}/pool`, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({
+      mode: 'off',
+      client_id: CLIENT_ID,
+      guest_id: GUEST_ID
+    })
+  }).catch(console.warn);
+  
+  // Update UI and show ready state
+  updateCasePoolUI();
+  showPreDeal();
+  
+  // Reset current state
+  current = null;
+  handCounter = 0;
+  nextSeq = 1;
+}
+// Call this function when:
+// 1. Target is changed
+// 2. User exits custom/competition mode
+// 3. Pool is completed
 
 /* =========================
    Cards render
 ========================= */
 const rankTok = (v)=>{ const n=Number(v); if(!Number.isNaN(n)) return ({1:'A',10:'T',11:'J',12:'Q',13:'K'}[n]||String(n)); return String(v); };
 function paintCardsFromPayload(data){
+  console.log('[DEBUG] paintCardsFromPayload called with data:', data);
   if (!el.cards) return;
-  el.cards.innerHTML = '';
-  const suits = ['C','D','H','S'];
-  const values = Array.isArray(data.question) ? data.question.slice(0,4) : [];
-  values.forEach((v,i)=>{
-    const code = `${rankTok(v)}${suits[i%4]}`;
-    const img = document.createElement('img');
-    const src = (CARD_IMG_BASE.endsWith('/')) ? (CARD_IMG_BASE + code + '.png') : (CARD_IMG_BASE + '/' + code + '.png');
-    img.src = src; img.alt = code; img.className='card'; img.title = `Click to insert ${rankTok(v)}`;
-    img.addEventListener('click', ()=>insertAtCursor(rankTok(v)));
-    el.cards.appendChild(img);
-  });
+
+  const vals  = data.values  || [];
+  const imgs  = data.images  || [];
+  const slots = [];
+
+  for (let i = 0; i < 4; i++) {
+    if (vals[i] == null) {
+      slots.push({ type: 'void' });
+    } else {
+      const it = imgs[i];
+      // prefer backend URL; carry code too for fallback + alt text
+      slots.push({
+        type: 'face',
+        value: vals[i],
+        url: (it && it.url) || null,
+        code: (it && it.code) || null
+      });
+    }
+  }
+  renderSlots(slots);
 }
+
+function renderSlots(slots) {
+  console.log('[DEBUG] renderSlots called with slots:', slots);
+  el.cards.innerHTML = '';
+
+  // Normalize input and guarantee at least 4 entries
+  const src = Array.isArray(slots) ? slots.slice() : [];
+  const N = Math.max(4, src.length);
+  while (src.length < N) src.push({ type: 'back' }); // fill missing with BACK
+
+  for (let i = 0; i < N; i++) {
+    const s = src[i] || { type: 'back' };
+    const img = document.createElement('img');
+    img.className = 'card';
+    img.decoding = 'async';
+    img.loading  = 'eager';
+
+    if (s.type === 'back') {
+      img.src = CARD_BACK;
+      img.alt = 'back';
+    } else if (s.type === 'void') {
+      img.src = CARD_VOID;
+      img.alt = 'void';
+    } else if (s.type === 'face') {
+      const code = s.code || rankTok(s.value);
+      img.src = s.url
+        ? s.url
+        : (CARD_IMG_BASE.endsWith('/') ? CARD_IMG_BASE + code + '.png'
+                                       : CARD_IMG_BASE + '/' + code + '.png');
+      img.alt = code;
+
+      // Click to insert (faces only)
+      const token = (s?.value != null) ? rankTok(s.value) : (code ? code[0] : '');
+      if (token) {
+        img.title = `Click to insert ${token}`;
+        img.style.cursor = 'pointer';
+        img.addEventListener('click', () => insertAtCursor(token));
+      }
+    } else {
+      // Unknown type → treat as back
+      img.src = CARD_BACK;
+      img.alt = 'back';
+    }
+
+    el.cards.appendChild(img);
+  }
+
+  console.log('[DEBUG] renderSlots appended', el.cards.children.length, 'cards');
+}
+
+// NEW: generic card renderer
+function renderSlotsbk(slots /* length 4 */) {function paintCardsFromPayload(data){
+  console.log('[DEBUG] paintCardsFromPayload called with data:', data);
+  if (!el.cards) return;
+
+  const vals  = data.values  || [];
+  const imgs  = data.images  || [];
+  const slots = [];
+
+  for (let i = 0; i < 4; i++) {
+    if (vals[i] == null) {
+      slots.push({ type: 'void' });
+    } else {
+      const it = imgs[i];
+      // prefer backend URL; carry code too for fallback + alt text
+      slots.push({
+        type: 'face',
+        value: vals[i],
+        url: (it && it.url) || null,
+        code: (it && it.code) || null
+      });
+    }
+  }
+  renderSlots(slots);
+}
+
+  console.log('[DEBUG] renderSlots called with slots:', slots);
+  el.cards.innerHTML = '';
+  for (let i = 0; i < 4; i++) {
+    const s = slots[i] || { type: 'void' };
+    const img = document.createElement('img');
+    img.className = 'card';
+    if (s.type === 'back') {
+      img.src = CARD_BACK;
+      img.alt = 'back';
+    } else if (s.type === 'void') {
+      img.src = CARD_VOID;
+      img.alt = 'void';
+    } else if (s.type === 'face') {
+      // Prefer backend URL; otherwise fall back to code → /cards/{code}.png; otherwise rankTok(value)
+      if (s.url) {
+        img.src = s.url;
+        img.alt = s.code || rankTok(s.value ?? '');
+      } else if (s.code) {
+        const code = s.code;
+        img.src = (CARD_IMG_BASE.endsWith('/') ? CARD_IMG_BASE + code + '.png' : CARD_IMG_BASE + '/' + code + '.png');
+        img.alt = code;
+      } else {
+        // Absolute last resort (no suit) – may 404 if your asset set is suit-coded.
+        const code = rankTok(s.value);
+        img.src = (CARD_IMG_BASE.endsWith('/') ? CARD_IMG_BASE + code + '.png' : CARD_IMG_BASE + '/' + code + '.png');
+        img.alt = code;
+      }
+ 
+     // ⟵ Restore “click to insert” like the old build
+     const token =
+       (s?.value != null)           ? rankTok(s.value) :
+       (typeof s?.code === 'string')? s.code.charAt(0) : ''; // 'A','3','4','T','J','Q','K'
+     if (token) {
+       img.title = `Click to insert ${token}`;
+       img.style.cursor = 'pointer';
+       img.addEventListener('click', ()=>insertAtCursor(token));
+     }
+
+    }
+    el.cards.appendChild(img);
+  }
+}
+
+// NEW: first screen state (and used after Exit)
+function showPreDeal() {
+  // four backs on screen to mimic a real table before dealing
+  renderSlots([{type:'back'},{type:'back'},{type:'back'},{type:'back'}]);
+  // also clear answer + feedback
+  if (el.answer) el.answer.value = '';
+  if (el.feedback) el.feedback.textContent = 'Ready — press Deal to start.';
+  if (el.question) el.question.textContent = `Target: ${TARGET} — Ready to deal`;
+  const nextBtn = document.getElementById('next');
+  if (nextBtn) nextBtn.textContent = 'Deal (D)';
+}
+
 
 /* =========================
    Deal / sequencing
 ========================= */
 function cancelNextDeal(){ if (nextTimer){ clearTimeout(nextTimer); nextTimer=null; } }
-function scheduleNextDeal(){ 
-  cancelNextDeal(); 
-  if (sessionEnded || !autoDealEnabled) return;
-  if (autoDealEnabled){ nextTimer = setTimeout(()=>{ nextTimer=null; deal({advanceCounter:true}); }, 900); } }
+function scheduleNextDeal(){
+  console.log('⏰ scheduleNextDeal called - autoDealEnabled:', autoDealEnabled);
+
+  cancelNextDeal();
+  if (sessionEnded || !autoDealEnabled) {
+    console.log('⏹️ Not scheduling next deal - session ended or auto-deal disabled');
+    return;
+  }
+
+  // Check if we should schedule next deal based on pool status
+  if (current) {
+    const isLastPuzzle =
+      (current.pool_info && current.pool_info.is_last_puzzle) ||
+      (current.pool_info && current.pool_info.remaining === 0) ||
+      current.pool_done;
+
+    if (isLastPuzzle) {
+      console.log('🚫 Not scheduling - this was the last puzzle in pool');
+      autoDealEnabled = false;
+      if (el.autoDeal) el.autoDeal.checked = false;
+
+      // After the last puzzle is completed, reset to easy mode
+      setTimeout(() => {
+        resetToEasyMode();
+        if (el.msg) el.msg.textContent = 'Pool completed! Returning to easy mode.';
+      }, 2000);
+      return;
+    }
+  }
+
+  // Schedule next deal if allowed
+  if (autoDealEnabled){
+    console.log('✅ Scheduling next deal in 900ms');
+    nextTimer = setTimeout(()=>{
+      console.log('🔄 Next deal timer fired');
+      nextTimer=null;
+      deal({advanceCounter:true});
+    }, 900);
+  }
+}
 
 async function deal({advanceCounter=true, caseId=null} = {}){
   if (sessionEnded) return;
+  
+  console.log('=== DEAL DEBUG START ===');
+  console.log('advanceCounter:', advanceCounter, 'caseId:', caseId);
+  console.log('autoDealEnabled:', autoDealEnabled);
+  console.log('current pool_done:', current ? current.pool_done : 'no current');
+  console.log('current pool_info:', current ? current.pool_info : 'no pool_info');
+  //console.log('➡️ /next url:', `${API_BASE}/next?${new URLSearchParams(params).toString()}`);
+  
   clearPanels();
   if (el.cards) el.cards.innerHTML='';
   if (el.question) el.question.textContent='Dealing…';
   revealedThisHand = false;
   countedPlayedThisHand = false;
 
-  const themeVal = (el.theme && el.theme.value) ? el.theme.value : 'classic';
-  const levelVal = (el.level && el.level.value) ? el.level.value : 'easy';
+  const settings = getCurrentSettings();
+  console.log('🎯 deal() sending request with target:', settings.target);
+
+  const themeVal = settings.theme;
+  const levelVal = settings.level;
   const seqToSend = nextSeq;
 
   try{
     const params = new URLSearchParams({
       theme: themeVal, level: levelVal, seq: String(seqToSend),
-      client_id: CLIENT_ID, guest_id: GUEST_ID, target: String(TARGET)
+      client_id: CLIENT_ID, guest_id: GUEST_ID, target: String(settings.target)
     });
     if (caseId) params.set('case_id', String(caseId));
+
+    console.log('📡 Fetching from:', `${API_BASE}/next?${params.toString()}`);
+    
     const r = await fetch(`${API_BASE}/next?${params.toString()}`);
+    
+    console.log('📥 Response status:', r.status, 'ok:', r.ok);
+    
     if (!r.ok){
+      if (r.status === 403) {
+        try {
+          const j = await r.json();
+          console.log('403 response data:', j);
+          if (j && j.competition_over) {
+            timerStop(); addToTotalTime();
+            await openSummaryFlow();
+            return;
+          }
+        } catch {}
+      }
       let msg=`HTTP ${r.status}`; try{ const j=await r.json(); if(j?.error) msg=j.error; }catch{}
       throw new Error(msg);
     }
+    
     const data = await r.json();
-    if (data && (data.stats || data.stats_payload)) { applyServerStats(data.stats || data.stats_payload); }
+    console.log('📦 Response data:', data);
+    
+    // DEBUG: Log pool status
+    console.log('🔍 pool_done:', data.pool_done, 'pool_info:', data.pool_info, 'case_id:', data.case_id, 'has_data:', !!data.values);
+    
+    // Handle pool completion - NEW SIMPLIFIED LOGIC
+    if (data && data.pool_done) {
+      console.log('🚨 POOL DONE DETECTED');
+      
+      // Check if this is a valid puzzle to display or just a completion signal
+      const hasValidPuzzle = data.case_id && data.values && data.values.length > 0;
+      
+      if (hasValidPuzzle) {
+        console.log('✅ Last puzzle in pool - will display it');
+        // This is the last puzzle - show it but disable auto-deal after completion
+        // Don't disable auto-deal yet - let the user solve this last puzzle first
+      } else {
+        console.log('🏁 Pool completely finished - no more puzzles');
+        // Pool is truly finished - reset to easy mode
+        resetToEasyMode();
+        if (el.msg) el.msg.textContent = 'Pool complete! Returning to easy mode.';
+        return;
+      }
+    }
+
+    if (data && (data.stats || data.stats_payload)) { 
+      console.log('📊 Applying server stats:', data.stats || data.stats_payload);
+      applyServerStats(data.stats || data.stats_payload); 
+    }
 
     const displaySeq = Number.isFinite(data.seq) ? (data.seq>=1?data.seq:data.seq+1) : seqToSend;
-    if (advanceCounter && !caseId){ handCounter = displaySeq; nextSeq = handCounter + 1; }
+    if (advanceCounter && !caseId){ 
+      handCounter = displaySeq; 
+      nextSeq = handCounter + 1; 
+    }
     if (caseId && handCounter===0) { handCounter = 1; }
 
     if (el.question){
       const qText = Array.isArray(data.question) ? data.question.join(', ') : (data.question ?? '');
       const shownSeq = caseId ? handCounter : displaySeq;
-      el.question.textContent = `Q${shownSeq} [#${data.case_id ?? (caseId||'')}] — Cards: ${qText} — Target: ${TARGET}`;
+      let questionText = `Q${shownSeq} [#${data.case_id ?? (caseId||'')}] — Cards: ${qText} — Target: ${data?.target ?? TARGET}`;
+      
+      // Add pool progress info if available
+      if (data.pool_info) {
+        questionText += ` (${data.pool_info.remaining + 1}/${data.pool_info.total_count})`;
+        
+        // If this is the last puzzle, update UI accordingly
+        if (data.pool_info.is_last_puzzle || data.pool_info.remaining === 0) {
+          questionText += ' — LAST PUZZLE';
+        }
+      } else if (data.pool_done) {
+        questionText += ' — LAST PUZZLE';
+      }
+      
+      el.question.textContent = questionText;
     }
 
     current = data || {};
+    // Store pool_info for reference
+    if (data.pool_info) {
+      current.pool_info = data.pool_info;
+    }
+    
+    console.log('📋 Current object updated:', {
+      case_id: current.case_id, 
+      values: current.values, 
+      pool_done: current.pool_done,
+      pool_info: current.pool_info
+    });
+    
     if (el.answer){ el.answer.value=''; el.answer.focus(); }
     paintCardsFromPayload(data);
     timerStart();
 
-    if (typeof data.help_disabled === 'boolean') helpDisabled = data.help_disabled;
+    if (typeof data.help_disabled === 'boolean') {
+      helpDisabled = data.help_disabled;
+      console.log('🛟 Help disabled:', helpDisabled);
+    }
 
+    console.log('=== DEAL DEBUG END ===');
+    
   }catch(e){
+    console.error('💥 Deal error:', e);
     if (el.question) el.question.textContent='';
     showError(`Failed to get a new question from ${API_BASE}. ${e.message || e}`);
   }
 }
 
+// 🔥 NEW: Helper to keep UI in sync with target changes
+function updateTargetUI(targetValue) {
+  // Update target dropdown
+  if (el.targetSelect) {
+    const preset = ['10', '24', '36'];
+    const targetStr = String(targetValue);
+    if (preset.includes(targetStr)) {
+      el.targetSelect.value = targetStr;
+      if (el.targetCustom) el.targetCustom.style.display = 'none';
+      if (el.applyTarget) el.applyTarget.style.display = 'none';
+    } else {
+      el.targetSelect.value = 'custom';
+      if (el.targetCustom) {
+        el.targetCustom.style.display = '';
+        el.targetCustom.value = targetStr;
+      }
+      if (el.applyTarget) el.applyTarget.style.display = '';
+    }
+  }
+  
+  // Update any other target displays
+  const targetDisplays = document.querySelectorAll('[data-target-display]');
+  targetDisplays.forEach(el => {
+    el.textContent = targetValue;
+  });
+}
 /* =========================
    Answer / Help / Skip
 ========================= */
@@ -428,6 +908,22 @@ async function help(all=false){
     });
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     const data = await r.json();
+      // Adopt server target (source of truth)
+   if (Number.isFinite(data?.target)) {
+     TARGET = data.target;
+     // Keep Settings UI consistent with the actual target
+     if (typeof targetSel !== 'undefined' && targetSel) {
+       const preset = ['10','24','36'];
+       const s = String(TARGET);
+       targetSel.value = preset.includes(s) ? s : 'custom';
+       if (targetSel.value === 'custom' && typeof targetCustom !== 'undefined' && targetCustom) {
+         targetCustom.style.display = '';
+         targetCustom.value = s;
+         if (typeof applyTarget !== 'undefined' && applyTarget) applyTarget.style.display = '';
+       }
+     }
+   }
+
     if (data && data.stats) applyServerStats(data.stats);
 
     if (el.msg){ el.msg.textContent=''; el.msg.className='status'; }
@@ -451,8 +947,18 @@ async function help(all=false){
   }
 }
 
+// Update ONLY the skipThenDeal function (around line 550)
 async function skipThenDeal(all=false){
   try {
+    const settings = getCurrentSettings(); // 🔥 ADD THIS LINE
+      // 🔥 ADD MORE LOGGING
+    console.log('🔄 skipThenDeal() sending request with:', {
+      target: settings.target,
+      case_id: current?.case_id,
+      values: current?.values
+    });
+    console.log('➡️  /skip payload:', { case_id: current?.case_id, all, target: settings.target });
+
     const r = await fetch(`${API_BASE}/skip`, {
       method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify({
@@ -460,7 +966,7 @@ async function skipThenDeal(all=false){
         case_id: current.case_id,
         all,
         client_id: CLIENT_ID, guest_id: GUEST_ID,
-        target: TARGET
+        target: settings.target // 🔥 ADD THIS LINE
       })
     });
     if (r.ok) {
@@ -478,14 +984,36 @@ async function skipThenDeal(all=false){
 async function loadCaseById(){
   const val = (el.caseIdInput && el.caseIdInput.value) || '';
   const id  = parseInt(val, 10);
-  if (!val || Number.isNaN(id) || id < 1 || id > 1820){ showError('Please enter a valid Case ID (1–1820).'); return; }
+  if (!val || Number.isNaN(id) || id < 1 || id > 1820){
+    showError('Please enter a valid Case ID (1–1820).');
+    return;
+  }
 
   clearPanels();
   if (el.cards) el.cards.innerHTML='';
   if (el.question) el.question.textContent = `Loading Case #${id}…`;
 
   try{
-    await deal({ advanceCounter:false, caseId:id });
+    // If we're in custom/competition mode, temporarily disable pool behavior
+    const currentLevel = el.level ? el.level.value : 'easy';
+    const wasInPoolMode = (currentLevel === 'custom' || currentLevel === 'competition');
+
+    if (wasInPoolMode) {
+      // Store current state
+      const tempAutoDeal = autoDealEnabled;
+
+      // Load the specific case
+      await deal({ advanceCounter: false, caseId: id });
+
+      // Don't re-enable auto-deal if we're in pool mode
+      autoDealEnabled = false;
+      if (el.autoDeal) el.autoDeal.checked = false;
+
+    } else {
+      // Normal behavior for non-pool modes
+      await deal({ advanceCounter: false, caseId: id });
+    }
+
   }catch(e){
     showError(`Failed to load case #${id}. ${e.message || e}`);
   }
@@ -496,34 +1024,81 @@ async function loadCaseById(){
 ========================= */
 async function doRestart(){
   try{
-    cancelNextDeal(); timerStop(); addToTotalTime(); clearPanels();
-    sessionEnded = false;
-    setGameplayEnabled(true);
-    if (el.question) el.question.textContent='Restarting…';
-
+    cancelNextDeal();
+    timerStop();
+    addToTotalTime();
     clearPanels();
-    if (el.answer) el.answer.value = '';
-    if (el.cards) el.cards.innerHTML = '';
-    if (el.solutionPanel) el.solutionPanel.style.display = 'none';
 
-    handCounter=0; nextSeq=1; resetLocalStats();
+    // Reset all state variables
+    sessionEnded = false;
+    current = null;
+    handCounter = 0;
+    nextSeq = 1;
+    autoDealEnabled = true;
+    helpDisabled = false;
+    revealedThisHand = false;
+    countedPlayedThisHand = false;
+
+    setGameplayEnabled(true);
+
+    // Clear UI elements
+    if (el.question) el.question.textContent = 'Restarting…';
+    if (el.answer) el.answer.value = '';
+    if (el.solutionPanel) el.solutionPanel.style.display = 'none';
+    if (el.feedback) {
+      el.feedback.textContent = '';
+      el.feedback.className = 'answer-feedback';
+    }
+    if (el.msg) {
+      el.msg.textContent = '';
+      el.msg.className = 'status';
+    }
+
+    
+    // Show back cards (same as initial state)
+    resetToEasyMode();
+    showPreDeal();
+
+    // Reset local stats to zero
+    resetLocalStats();
+
+    // Reset auto-deal checkbox to default
+    if (el.autoDeal) {
+      el.autoDeal.checked = true;
+      autoDealEnabled = true;
+    }
+
+    // Call server restart endpoint
     try{
       const r = await fetch(`${API_BASE}/restart`, {
         method:'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({ client_id: CLIENT_ID, guest_id: GUEST_ID, target: TARGET })
+        body: JSON.stringify({
+          client_id: CLIENT_ID,
+          guest_id: GUEST_ID,
+          target: TARGET
+        })
       });
       if (r.ok){
-        const j=await r.json().catch(()=>null);
+        const j = await r.json().catch(()=>null);
         if (j?.stats) applyServerStats(j.stats);
         current = null;
       }
-    }catch(e){ console.warn('[GAME24] /restart not available', e); }
+    }catch(e){
+      console.warn('[GAME24] /restart not available', e);
+    }
 
-    await deal({ advanceCounter:true });
+    // Update UI to show ready state
+    if (el.question) el.question.textContent = `Target: ${TARGET} — Ready to deal`;
+    if (el.feedback) el.feedback.textContent = 'Session restarted — press Deal to start.';
+
+    console.log('🔄 Game restarted successfully');
+
   }catch(e){
     console.error('[doRestart] failed', e);
-    try{ await deal({advanceCounter:true}); }catch{}
+    // Fallback: just show the initial state
+    showPreDeal();
+    resetLocalStats();
   }
 }
 window.doRestart = doRestart;
@@ -540,7 +1115,7 @@ const confirmEls = {
 function openConfirm({title, msg, onOK}){
   if (confirmEls.title)  confirmEls.title.textContent = title || 'Are you sure?';
   if (confirmEls.msg)    confirmEls.msg.textContent   = msg || '';
-  const doClose = ()=>{ if(confirmEls.backdrop) confirmEls.backdrop.style.display='none'; };
+  const doClose = ()=> hideModal(confirmEls.backdrop);
   const handleOK = ()=>{ try{ onOK && onOK(); } finally { cleanup(); } };
   const cleanup = ()=>{
     if (confirmEls.ok)     confirmEls.ok.removeEventListener('click', handleOK);
@@ -549,15 +1124,17 @@ function openConfirm({title, msg, onOK}){
   };
   if (confirmEls.ok)     confirmEls.ok.addEventListener('click', handleOK);
   if (confirmEls.cancel) confirmEls.cancel.addEventListener('click', doClose);
-  if (confirmEls.backdrop) confirmEls.backdrop.style.display='flex';
+  showModal(confirmEls.backdrop);
 }
 /* =========================
    Summary / Exit flow
 ========================= */
 function showSummaryModalReport(html){
   if (el.summaryReport) el.summaryReport.innerHTML = html || '<p>No summary.</p>';
-  if (el.summaryBackdrop) el.summaryBackdrop.style.display='flex';
+  showModal(el.summaryBackdrop);
 }
+const hideSummary = ()=> hideModal(el.summaryBackdrop);
+
 async function openSummaryFlow(){
   try{
     const r = await fetch(`${API_BASE}/summary`, {
@@ -583,39 +1160,21 @@ async function openSummaryFlow(){
 }
 window.openSummaryFlow = openSummaryFlow;
 
+let exiting = false;
 async function finalizeFromSummary(){
+  if (exiting) return;
+  exiting = true;
   try {
-    const r = await fetch(`${API_BASE}/exit`, {
-      method: 'POST',
-      headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({
-        client_id: CLIENT_ID,
-        guest_id: GUEST_ID,
-      })
-    });
-
-    if (!r.ok) throw new Error(`HTTP ${r.status}`);
-
-    let url = document.body?.dataset?.homeUrl || "/";
-    try {
-      const txt = await r.text();
-      const j = txt ? JSON.parse(txt) : null;
-      if (j && j.redirect_url) url = j.redirect_url;
-    } catch { /* ignore parse errors; use fallback url */ }
-
-    hideSummaryModal?.();
-    cancelNextDeal?.();
-    window.location.assign(url);
-
-  } catch (err) {
-    console.error('[exit] failed:', err);
-    const fallback = document.body?.dataset?.homeUrl || "/";
-    window.location.assign(fallback);
+    hideSummary?.();
+    const r = await fetch(`${API_BASE}/exit`, { method:'POST' });
+    const j = await r.json();
+    if (j?.redirect_url) location.href = j.redirect_url;
+  } catch (e) {
+    exiting = false; // allow retry if something fails
   }
 }
-window.finalizeFromSummary = finalizeFromSummary;
 
-const hideSummary = ()=>{ if (el.summaryBackdrop) el.summaryBackdrop.style.display='none'; };
+window.finalizeFromSummary = finalizeFromSummary;
 
 /* =========================
    Events
@@ -631,7 +1190,25 @@ on(el.noBtn,'click', ()=>{ if(el.answer){ el.answer.value='no solution'; check()
 
 on(el.help,'click', ()=>help(false));
 on(el.helpAll,'click', ()=>help(true));
-on(el.next,'click', skipThenDeal);
+// Deal / Next:
+// If no current hand, just deal. Otherwise keep your existing skip-then-deal flow.
+on(el.next, 'click', async () => {
+  try {
+    // Ask the server if a hand exists by peeking time_left via stats or rely on our local gate:
+    // We'll use a lightweight local check: if we haven't painted any face yet, current == null.
+    const anyFace = [...el.cards.querySelectorAll('img.card')].some(img => {
+      const a = img.getAttribute('alt') || '';
+      return a && a !== 'back' && a !== 'void' && a !== '—';
+    });
+    if (!anyFace) {
+      await deal({ advanceCounter: true });
+    } else {
+      await skipThenDeal();
+    }
+  } catch (e) {
+    console.error(e);
+  }
+});
 
 on(el.loadCaseBtn,'click', loadCaseById);
 if (el.caseIdInput) el.caseIdInput.addEventListener('keydown', (e)=>{ if(e.key==='Enter'){ e.preventDefault(); loadCaseById(); } });
@@ -659,9 +1236,18 @@ on(el.summaryExit,  'click', (e)=>{ e.preventDefault(); finalizeFromSummary(); }
 
 // Keyboard shortcuts
 document.addEventListener('keydown',(e)=>{
+ try {
   if (e.ctrlKey || e.metaKey || e.altKey) return;
-  if (e.target === el.answer && e.key === 'Enter'){ e.preventDefault(); check(); return; }
-  const k=e.key.toLowerCase();
+  
+  // Safe key access with fallback
+  const key = e.key || '';
+  const k = typeof key === 'string' ? key.toLowerCase() : '';
+  
+  // If we don't have a valid key, exit early
+  if (!k) return;
+  
+  if (e.target === el.answer && k === 'enter'){ e.preventDefault(); check(); return; }
+  
   if (k==='d'){ e.preventDefault(); skipThenDeal(); }
   else if (k==='n'){ e.preventDefault(); if(el.answer){ el.answer.value='no solution'; check(); } }
   else if (k==='h' && e.shiftKey){ e.preventDefault(); help(true); }
@@ -669,6 +1255,10 @@ document.addEventListener('keydown',(e)=>{
   else if (k==='r'){ e.preventDefault(); doRestart(); }
   else if (k==='x'){ e.preventDefault(); openSummaryFlow(); }
   else if (k==='s' && e.shiftKey){ e.preventDefault(); openSummaryFlow(); }
+ }catch (error) {
+    console.error('Error in keyboard handler:', error);
+    // Prevent the error from breaking other functionality
+  }
 });
 
 /* =========================
@@ -688,18 +1278,38 @@ function parseCasePool(text){
   }
   return nums;
 }
-function updateCasePoolUI(){
+function updateCasePoolUI() {
   const lvl = el.level ? el.level.value : 'easy';
-  const isPool = (lvl==='custom' || lvl==='competition');
+  const isPool = (lvl === 'custom' || lvl === 'competition');
+
   if (el.casePoolRow) el.casePoolRow.style.display = isPool ? '' : 'none';
   const wrap = el.compDurationInput && el.compDurationInput.parentElement;
-  if (wrap) wrap.style.display = (lvl==='competition') ? '' : 'none';
-  if (el.compDurationInput) el.compDurationInput.disabled = (lvl!=='competition');
-  helpDisabled = (lvl==='competition');
+  if (wrap) wrap.style.display = (lvl === 'competition') ? '' : 'none';
+  if (el.compDurationInput) el.compDurationInput.disabled = (lvl !== 'competition');
+  helpDisabled = (lvl === 'competition');
+
+  // Additional check: if we're in pool mode but have no saved pool, show warning
+  if (isPool) {
+    const savedPoolText = localStorage.getItem('casePoolText');
+    if (!savedPoolText || savedPoolText.trim() === '') {
+      if (el.msg) el.msg.textContent = 'Set up a puzzle pool and press Save to start.';
+    }
+  }
 }
 on(el.level,'change', ()=>{
-  localStorage.setItem('level', el.level.value);
-  updateCasePoolUI();
+  const newLevel = el.level.value;
+  localStorage.setItem('level', newLevel);
+
+  if (newLevel !== 'custom' && newLevel !== 'competition') {
+    // User exits custom/competition mode - reset to easy mode
+    console.log('🚪 Exiting pool mode, resetting to easy mode');
+    resetToEasyMode();
+  } else {
+    // Entering pool modes - show back cards to indicate ready state
+    updateCasePoolUI();
+    showPreDeal();
+    if (el.question) el.question.textContent = `Target: ${TARGET} — Set up pool and press Save`;
+  }
 });
 
 // Save pool → backend
@@ -720,10 +1330,31 @@ on(el.saveCasePoolBtn, 'click', async ()=>{
   }
 
   try{
-    const r = await fetch(`${API_BASE}/pool`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
-    if (!r.ok){ const er=await r.json().catch(()=>({})); throw new Error(er.error||'Failed to set pool'); }
+    // Show back cards immediately to indicate "ready" state
+    showPreDeal();
+    if (el.question) el.question.textContent = 'Setting up pool...';
+    
+    const r = await fetch(`${API_BASE}/pool`, { 
+      method:'POST', 
+      headers:{'Content-Type':'application/json'}, 
+      body: JSON.stringify(payload) 
+    });
+    
+    if (!r.ok){ 
+      const er=await r.json().catch(()=>({})); 
+      throw new Error(er.error||'Failed to set pool'); 
+    }
+    
+    // Pool saved successfully - show back cards and ready message
+    showPreDeal();
     if (el.msg) el.msg.textContent = `Pool saved (${ids.length} case IDs) for ${lvl}. Press Deal to start.`;
-  }catch(e){ showError(e.message); }
+    if (el.question) el.question.textContent = `Target: ${TARGET} — Pool ready (${ids.length} puzzles)`;
+    
+  }catch(e){ 
+    showError(e.message);
+    // Still show back cards on error but with error state
+    showPreDeal();
+  }
 });
 
 // Persist some settings on load
@@ -777,7 +1408,7 @@ on($('#modalBackdrop'),'click',(e)=>{ if(e.target===$('#modalBackdrop')) e.curre
 
 // Boot once
 let booted=false;
-async function boot(){ if(booted) return; booted=true; updateStats(); await deal({advanceCounter:true}); }
+async function boot(){ if(booted) return; booted=true; updateStats(); showPreDeal(); }
 boot();
 
 })(); // IIFE end
