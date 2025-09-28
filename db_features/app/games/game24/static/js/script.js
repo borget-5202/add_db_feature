@@ -99,6 +99,20 @@ const el = {
   timer: $('#timer'),
 };
 
+// HOW-TO modal (❓)
+el.howToBtn      = document.getElementById('howtoLink')      // current <span id="howtoLink">?</span>
+                  || document.getElementById('howToBtn')
+                  || document.querySelector('[data-howto-btn]');
+
+el.howToBackdrop = document.getElementById('modalBackdrop')  // current <div id="modalBackdrop" ...>
+                  || document.getElementById('howToBackdrop')
+                  || document.getElementById('howToModal')
+                  || document.querySelector('[data-howto-backdrop]');
+
+el.howToClose    = document.getElementById('modalClose')     // current close button
+                  || document.querySelector('#modalBackdrop .close, #howToBackdrop .modal-close, [data-howto-close]');
+
+
 // --- Modal helpers (shared) ---
 function showModal(backdrop){
   if (!backdrop) return;
@@ -216,6 +230,20 @@ function timerStart(){ timerStop(); tStart=performance.now(); if (el.timer) el.t
 function timerStop(){ if(tTick){ clearInterval(tTick); tTick=null; } }
 function addToTotalTime(){ if(tStart){ stats.totalTime += Math.floor((performance.now()-tStart)/1000); tStart=0; updateStats(); } }
 
+// Idonotknow where to add, chose timer. Wire ❓ How-to modal using the shared modal helpers
+if (el.howToBtn && el.howToBackdrop){
+  el.howToBtn.addEventListener('click',  ()=> showModal(el.howToBackdrop));
+  el.howToClose?.addEventListener('click', ()=> hideModal(el.howToBackdrop));
+  el.howToBackdrop.addEventListener('click', (e)=>{
+    if (e.target === el.howToBackdrop) hideModal(el.howToBackdrop);
+  });
+}
+document.addEventListener('keydown', (e)=>{
+  if (e.key === 'Escape' && el.howToBackdrop?.classList.contains('modal-visible')) {
+    hideModal(el.howToBackdrop);
+  }
+});
+
 /* =========================
    UI helpers
 ========================= */
@@ -298,36 +326,30 @@ function getCurrentSettings() {
 
   return settings;
 }
-  function resetToEasyMode() {
-  console.log('🔄 Resetting to easy mode...');
   
-  // Reset UI to easy mode
-  if (el.level) el.level.value = 'easy';
-  localStorage.setItem('level', 'easy');
+  function poolOffPreserveLevel() {
+    console.log('🚫 Turning off pool (preserve level):', el?.level?.value);
+    // keep current level selection + localStorage('level') as-is
   
-  // Re-enable auto-deal
-  autoDealEnabled = true;
-  if (el.autoDeal) el.autoDeal.checked = true;
-  localStorage.setItem('autoDeal_g24', 'true');
+    // Leave the user's typed pool IDs intact so they can save later
+    // localStorage.removeItem('casePoolText');  // ← intentionally NOT clearing
   
-  // Clear pool settings
-  localStorage.removeItem('casePoolText');
-  localStorage.removeItem('compDurationMin');
+    // Turn off pool on the server
+    fetch(`${API_BASE}/pool`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ mode: 'off', client_id: CLIENT_ID, guest_id: GUEST_ID })
+    }).catch(console.warn);
   
-  // Clear backend pool
-  fetch(`${API_BASE}/pool`, {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({
-      mode: 'off',
-      client_id: CLIENT_ID,
-      guest_id: GUEST_ID
-    })
-  }).catch(console.warn);
+    // Reasonable defaults
+    autoDealEnabled = true;
+    if (el.autoDeal) el.autoDeal.checked = true;
+    localStorage.setItem('autoDeal_g24', 'true');
   
-  // Update UI
-  updateCasePoolUI();
-  showPreDeal();
+    updateCasePoolUI();
+    showPreDeal();
+    current = null;
+    handCounter = 0;
 }
 
 /* =========================
@@ -355,11 +377,11 @@ function getCurrentSettings() {
   
   // Decision logic: only reset if we're in pool mode BUT have no valid pool
   if ((savedLevel === 'custom' || savedLevel === 'competition') && !hasValidPool) {
-    console.log('🔁 In pool mode but no valid pool - resetting to easy');
-    resetToEasyMode();
-    return;
+    console.log('🔁 Pool mode selected but no pool yet — keeping selection, pool OFF until saved.')
+    poolOffPreserveLevel();
+    // Do NOT return; allow initialLevel to remain custom/competition in the UI
   }
-  
+
   // Respect URL parameter if present, otherwise use saved preference
   let initialLevel = 'easy';
   
@@ -429,46 +451,52 @@ function resetLocalStats(){
   stats.totalTime = 0;
   updateStats();
 }
-function resetToEasyMode() {
-  console.log('🔄 Resetting to easy mode...');
-  
-  // Reset UI to easy mode
+// One true reset: fall back to Easy and clear any pool.
+// Options:
+//   - resetState: also clear current hand counters (default: true)
+//   - announce:   write a neutral message in #msg (default: false)
+function resetToEasyMode(opts = {}) {
+  const { resetState = true, announce = false } = opts;
+
+  console.log('🔄 Resetting to easy mode...', opts);
+
+  // Set level → easy (UI + localStorage)
   if (el.level) el.level.value = 'easy';
   localStorage.setItem('level', 'easy');
-  
-  // Re-enable auto-deal
+
+  // Turn auto-deal back on
   autoDealEnabled = true;
   if (el.autoDeal) el.autoDeal.checked = true;
   localStorage.setItem('autoDeal_g24', 'true');
-  
-  // Clear pool settings
+
+  // Clear any pool settings
   localStorage.removeItem('casePoolText');
   localStorage.removeItem('compDurationMin');
-  
-  // Clear backend pool
+
+  // Tell backend to turn pool OFF
   fetch(`${API_BASE}/pool`, {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({
-      mode: 'off',
-      client_id: CLIENT_ID,
-      guest_id: GUEST_ID
-    })
+    body: JSON.stringify({ mode: 'off', client_id: CLIENT_ID, guest_id: GUEST_ID })
   }).catch(console.warn);
-  
-  // Update UI and show ready state
+
+  // Refresh UI
   updateCasePoolUI();
   showPreDeal();
-  
-  // Reset current state
-  current = null;
-  handCounter = 0;
-  nextSeq = 1;
+
+  // Optionally clear hand/session state
+  if (resetState) {
+    current = null;
+    handCounter = 0;
+    nextSeq = 1;
+  }
+
+  // Optional toast/status
+  if (announce && el.msg) {
+    el.msg.textContent = 'Switched to Easy mode.';
+    el.msg.className = 'status';
+  }
 }
-// Call this function when:
-// 1. Target is changed
-// 2. User exits custom/competition mode
-// 3. Pool is completed
 
 /* =========================
    Cards render
@@ -623,8 +651,10 @@ function showPreDeal() {
   renderSlots([{type:'back'},{type:'back'},{type:'back'},{type:'back'}]);
   // also clear answer + feedback
   if (el.answer) el.answer.value = '';
-  if (el.feedback) el.feedback.textContent = 'Ready — press Deal to start.';
+  if (el.feedback) el.feedback.textContent = '';
+  if (el.msg){ el.msg.textContent = 'Ready — press Deal to start.'; el.msg.className = 'status status-success'; }
   if (el.question) el.question.textContent = `Target: ${TARGET} — Ready to deal`;
+
   const nextBtn = document.getElementById('next');
   if (nextBtn) nextBtn.textContent = 'Deal (D)';
 }
@@ -933,7 +963,7 @@ async function help(all=false){
       if (el.solutionMsg) el.solutionMsg.textContent=`No solution for target ${TARGET}.`;
     } else if (all){
       if (el.solutionMsg){
-        el.solutionMsg.innerHTML = `Solutions (${data.solutions.length}) for target ${TARGET}:`;
+        el.solutionMsg.innerHTML = `<strong>Solutions (${data.solutions.length}) for target ${TARGET}:</strong> `;
         const grid=document.createElement('div'); grid.className='solution-grid';
         data.solutions.forEach(s=>{ const d=document.createElement('div'); d.textContent=s; grid.appendChild(d); });
         el.solutionMsg.appendChild(grid);
@@ -1042,21 +1072,22 @@ async function doRestart(){
     setGameplayEnabled(true);
 
     // Clear UI elements
-    if (el.question) el.question.textContent = 'Restarting…';
+    if (el.question) el.question.textContent = `Target: ${TARGET} — Ready to deal`;
     if (el.answer) el.answer.value = '';
     if (el.solutionPanel) el.solutionPanel.style.display = 'none';
     if (el.feedback) {
-      el.feedback.textContent = '';
+      el.feedback.textContent = 'Session restarted123 — press Deal to start.';
       el.feedback.className = 'answer-feedback';
     }
     if (el.msg) {
-      el.msg.textContent = '';
-      el.msg.className = 'status';
+      el.msg.textContent = 'Session restarted789 — press Deal to start.';
+      el.msg.className = 'status status-success';
     }
 
     
     // Show back cards (same as initial state)
-    resetToEasyMode();
+    //resetToEasyMode();
+    poolOffPreserveLevel()
     showPreDeal();
 
     // Reset local stats to zero
@@ -1090,7 +1121,8 @@ async function doRestart(){
 
     // Update UI to show ready state
     if (el.question) el.question.textContent = `Target: ${TARGET} — Ready to deal`;
-    if (el.feedback) el.feedback.textContent = 'Session restarted — press Deal to start.';
+    if (el.msg) el.msg.textContent = 'Session restarted — press Deal to start.'; 
+    //if (el.feedback) el.feedback.textContent = 'Session restarted — press Deal to start.';
 
     console.log('🔄 Game restarted successfully');
 
@@ -1301,9 +1333,9 @@ on(el.level,'change', ()=>{
   localStorage.setItem('level', newLevel);
 
   if (newLevel !== 'custom' && newLevel !== 'competition') {
-    // User exits custom/competition mode - reset to easy mode
-    console.log('🚪 Exiting pool mode, resetting to easy mode');
-    resetToEasyMode();
+    // Just turn pool OFF, keep the selected normal difficulty (easy/medium/hard/challenge)
+    console.log('🚪 poolOffPreserveLevel , not resetting to easy mode');
+    poolOffPreserveLevel();
   } else {
     // Entering pool modes - show back cards to indicate ready state
     updateCasePoolUI();
