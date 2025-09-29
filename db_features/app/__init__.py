@@ -112,6 +112,13 @@ def create_app() -> Flask:
     except Exception:
         app.logger.exception("Failed to register Game24 blueprint")
 
+    # sum-4-cards
+    try:
+        from app.games.sum_4_cards.sum4_routes import bp as sum4_bp
+        app.register_blueprint(sum4_bp)
+    except Exception:
+        app.logger.info("sum-4-cards blueprint not found; skipping")
+
     # Count-by-2s
     try:
         from .games.count_by_2s.cb2s_routes import bp as cb2s_bp
