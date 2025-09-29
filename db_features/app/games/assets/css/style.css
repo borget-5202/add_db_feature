@@ -43,6 +43,10 @@
   --act-accent:   #ffd59e;
   --act-danger:   #f7b2d9;
 
+  /* NYU Stern Colors - ADD THIS LINE */
+  --stern-purple: #4B286D;
+  --stern-purple-dark: #3a1f55;
+
   /* Layout scales - PROPER POKER CARD RATIO (5:7) */
   --board-max: 800px;
   --card-w: 130px;         /* Width from original style.css */
@@ -265,11 +269,11 @@ a:hover{ text-decoration:underline; }
   transition: transform .06s ease, box-shadow .12s ease, opacity .12s ease, background-color .12s ease;
   color: #fff;
 }
-.ops-wrap button[data-op="+"]{ background:var(--op-plus); font-size:28px; }
-.ops-wrap button[data-op="-"]{ background:var(--op-minus); font-size:32px; padding-top:4px; }
+.ops-wrap button[data-op="+"]{ background:var(--op-plus); font-size:28px; color: #111 ;}
+.ops-wrap button[data-op="-"]{ background:var(--op-minus); font-size:32px; padding-top:4px; color: #111; }
 .ops-wrap button[data-op="×"],
 .ops-wrap button[data-op="*"],
-.ops-wrap button[data-op="x"]{ background:var(--op-times); font-size:28px; }
+.ops-wrap button[data-op="x"]{ background:var(--op-times); font-size:28px; color: #111; }
 
 /* Division symbol from old_style.css */
 .ops-wrap button[data-op="/"]{
@@ -330,12 +334,31 @@ button:active { transform: translateY(1px); }
 /* Specific button IDs with colors */
 #deal       { background: var(--act-secondary); color:#0b3a20; font-weight:700; }
 #check      { background: var(--act-primary);   color:#09243a; font-weight:700; }
-#nosolution { background: var(--act-accent);    color:#3a2a09; font-weight:700; }
+#nosolution { background: var(--act-accent);    color:#3a2a09; font-weight:700; } 
 #restart    { background: var(--act-danger);    color:#3a0f1b; font-weight:700; }
 #exit       { background: #cbd5e1;              color:#111;    font-weight:700; }
-#help, #helpAll { background: var(--act-primary); color:#09243a; font-weight:700; }
-#clear, #back, #peek { background:#e5e7eb; color:#111; font-weight:700; }
+/*#help, #helpAll { background: var(--act-primary); color:#09243a; font-weight:700; }*/
+#clear, #back { background:#e5e7eb; color:#111; font-weight:700; }
 
+/*overrid button */
+#check, #next {
+  background: var(--stern-purple);
+  color: white;
+  font-weight:700;
+}
+/*
+#no, #restart {
+  background: var(--error);
+  color: white;
+  font-weight:700;
+}*/
+
+
+#exit {
+  background: #cbd5e1;
+  color:#111;
+  font-weight:700;
+}
 /* ==================================================================
    5) SETTINGS / INPUTS - FIXED width for all difficulty levels
    ================================================================== */
@@ -1047,3 +1070,240 @@ img.card {
 .card-slot {
   overflow: visible;
 }
+/* NYU Stern-inspired palette */
+body {
+    background: #f8f9fa; /* Light neutral background */
+    min-height: 100vh;
+    margin: 0;
+    padding: 0;
+}
+
+.wrap {
+    background: white;
+    border-radius: 8px;
+    box-shadow: 0 2px 12px rgba(75, 40, 109, 0.1);
+    margin: 20px auto;
+    padding: 20px;
+    max-width: 1200px;
+}
+
+/* Use Stern's purple for accents */
+.game-header {
+    background: #4B286D; /* NYU Stern purple */
+    color: white;
+    padding: 20px;
+    border-radius: 8px;
+    margin-bottom: 20px;
+}
+
+.primary-btn {
+    background: #4B286D;
+    color: white;
+}
+
+.primary-btn:hover {
+    background: #3a1f55; /* Darker purple */
+}
+
+.primary-btn, .success-btn, .info-btn {
+    background: #4B286D; /* NYU Stern purple */
+    color: white;
+    border: none;
+}
+
+.primary-btn:hover, .success-btn:hover, .info-btn:hover {
+    background: #3a1f55; /* Darker purple */
+}
+/*op1 match NYU for action button*/
+.primary-btn, .success-btn, .info-btn {
+    background: #4B286D; /* NYU Stern purple */
+    color: white;
+    border: none;
+}
+
+.primary-btn:hover, .success-btn:hover, .info-btn:hover {
+    background: #3a1f55; /* Darker purple */
+}
+/*op3 match NYU for action button*/
+.primary-btn { background: #4B286D; } /* Dark purple */
+.success-btn { background: #7B1FA2; } /* Medium purple */
+.danger-btn { background: #C2185B; } /* Purple-pink */
+.info-btn { background: #512DA8; } /* Deep purple */
+
+/*op2 match NYU for action button*/
+/* Keep purple for primary actions */
+.primary-btn {
+    background: #4B286D;
+    color: white;
+}
+
+/* Use complementary colors for other actions */
+.success-btn { /* Check button */
+    background: #2E7D32; /* Calm green */
+    color: white;
+}
+
+.danger-btn { /* No Solution, Restart */
+    background: #C62828; /* Alert red */
+    color: white;
+}
+
+.info-btn { /* Help buttons */
+    background: #0277BD; /* Trust blue */
+    color: white;
+}
+/*action button*/
+#check, #next, #help, #helpAll {
+  background: var(--stern-purple);
+  color: white;
+  font-weight:700;
+}
+
+#clear, #backspace {
+  background:#e5e7eb;
+  color:#111;
+  font-weight:700;
+}
+
+#no, #restart {
+  background: var(--error);
+  color: white;
+  font-weight:700;
+}
+
+#exit {
+  background: #cbd5e1;
+  color:#111;
+  font-weight:700;
+}
+/* PERMANENT FIX - Force help buttons to light gray */
+#clear, #backspace , #nosolution , #restart , #help , #helpAll , #no {
+  background:#e5e7eb;
+  color:#111;
+  font-weight:700;
+}
+/* HARD CODE ALL OPERATORS TO STERN PURPLE */
+.ops-wrap button[data-op] {
+  background: #4B286D !important;
+  color: white !important;
+}
+/* HARD CODE ALL OPERATORS TO LIGHT GRAY */
+.ops-wrap button[data-op] {
+  background: #e5e7eb !important;
+  color: #111 !important;
+}
+/* Avoid "double panel" when embedded inside the site's main layout */
+.main-content .wrap > .panel {
+  background: transparent;
+  box-shadow: none;
+  padding: 0;
+}
+
+/* keep a little spacing so content doesn't hug the edges */
+.main-content .wrap { padding: 0 0 8px; }
+
+/* if your operator/solutions mini-panels should still float, keep their shadow */
+.main-content .wrap .op-panel,
+.main-content .wrap .solutions-panel,
+.main-content .wrap .help-panel {
+  background: var(--panel);
+  box-shadow: var(--shadow);
+}
+/*final polish*/
+/* Settings: subtle chip + matching open panel */
+details.settings summary {
+  border: 1px solid var(--divider);
+  border-radius: 9999px;
+  padding: 6px 12px;
+  background: transparent;
+  color: var(--text);
+  outline: none;
+}
+details.settings summary:hover { background: #f3f4f6; }
+details.settings summary:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--brand) 20%, transparent);
+}
+
+details.settings[open] {
+  background: var(--panel);
+  border: 1px solid var(--divider);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow);
+  padding: 16px;
+}
+
+/* Buttons hierarchy */
+.btn, button { border-radius: 10px; }
+
+button#deal {
+  background: var(--act-primary);
+  color: white;
+  border: none;
+}
+button#deal:hover { filter: brightness(0.95); }
+
+.actions-row button:not(#deal) {
+  background: white;
+  color: var(--text);
+  border: 1px solid var(--divider);
+}
+.actions-row button:not(#deal):hover { background: #f8fafc; }
+
+/* Operator strip */
+.ops { gap: 10px; }
+.ops button {
+  width: 40px; height: 40px;
+  border: 1px solid var(--divider);
+  background: white;
+}
+.ops button:hover { background:#f9fafb; }
+.ops button:active { transform: translateY(1px); }
+button[data-op="^"], .op[data-op="^"] { color:#111 !important; text-shadow:none !important; }
+
+/* Messages */
+.status { background: var(--panel); border: 1px solid var(--divider); }
+.status-success { background: #ecfdf5; border-color: #bbf7d0; }
+.status-error   { background: #fef2f2; border-color: #fecaca; }
+
+/* Solution/help areas (adjust selectors to yours if needed) */
+.solutions-panel, .help-panel {
+  background: var(--panel);
+  border: 1px solid var(--divider);
+  border-radius: var(--r-md);
+}
+
+/* Final card style — use the PNG's own edges/corners */
+img.card {
+  width: var(--card-w);
+  aspect-ratio: 5 / 7;
+  height: auto;
+  object-fit: contain;
+  object-position: center;
+  background: transparent;
+  padding: 0;
+  border-radius: 0;
+  box-shadow: var(--shadow);
+  display: block;
+}
+
+.title-panel { margin-bottom: 18px; }
+.ops { margin-top: 14px; }
+#msg { margin-top: 10px; margin-bottom: 12px; }
+.stats-row { margin-top: 10px; }
+
+/*more tounch*/
+.btn:focus-visible, button:focus-visible, a:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--brand) 25%, transparent);
+}
+
+@media (max-width: 640px) {
+  .panel { padding: 14px; }
+  .ops { gap: 8px; margin-top: 10px; }
+  #msg { margin: 8px 0 10px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; animation: none !important; }
+}
+img.card { image-rendering: -webkit-optimize-contrast; }
