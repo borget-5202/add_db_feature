@@ -409,9 +409,9 @@ def play():
     Render the play page with proper session setup.
     """
     # Ensure game exists
-    game = Game.query.filter_by(slug="game24").first()
+    game = Game.query.filter_by(game_key="game24").first()
     if not game:
-        game = Game(slug="game24", title="24-Point Card Game", modality="cards", subject="math")
+        game = Game(game_key="game24", title="24-Point Card Game", modality="cards", subject="math")
         db.session.add(game)
         db.session.commit()
 
@@ -1039,7 +1039,7 @@ def api_exit():
     snap = _build_summary(state)
     # persist
     GAME24_ID, GAME24_SLUG = 1, "game24"
-    sess_id = persist_session_from_id(db=db, game_id=GAME24_ID, game_slug=GAME24_SLUG, state=state, summary=snap)
+    sess_id = persist_session_from_id(db=db, game_id=GAME24_ID, game_key=GAME24_SLUG, state=state, summary=snap)
     # reset
     reset_runtime_state(state)
     # home
