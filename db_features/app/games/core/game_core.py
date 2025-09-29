@@ -444,23 +444,23 @@ def compute_session_window(per: List[Dict], fallback_now: Optional[int] = None) 
     return int(started), int(ended)
 
 # ---- human-friendly codes (two flavors) ----
-def public_code_for(game_slug: str, sid: str | None, client_id: str | None,
+def public_code_for(game_key: str, sid: str | None, client_id: str | None,
                     digest_bytes: int = 6) -> str:
     """Random/hashed, non-guessable code (with entropy)."""
     salt = secrets.token_hex(4)
     key = f"{sid or ''}|{client_id or ''}|{time.time_ns()}|{salt}"
     h = hashlib.blake2s(key.encode(), digest_size=digest_bytes).digest()
     code = base64.b32encode(h).decode("ascii").rstrip("=")
-    prefix = (game_slug or "GAM")[:3].upper()
+    prefix = (game_key or "GAM")[:3].upper()
     return f"{prefix}-{code[:4]}-{code[4:8]}"
 
-def public_code_from_id(game_slug: str, session_id: int) -> str:
+def public_code_from_id(game_key: str, session_id: int) -> str:
     """Deterministic code derived from the PK (simple, unique)."""
     alphabet = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"  # Crockford base32
     n, s = session_id, ""
     while n: n, r = divmod(n, 32); s = alphabet[r] + s
     s = (s or "0").zfill(6)
-    prefix = (game_slug or "GAM")[:3].upper()
+    prefix = (game_key or "GAM")[:3].upper()
     return f"{prefix}-{s[:3]}-{s[3:]}"
 
 # ---- outcome normalization ----
@@ -529,7 +529,7 @@ def reset_runtime_state(state: Dict, *, preserve_identity: bool = True) -> None:
 
 # ---- persist (two patterns) ----
 
-def persist_session_random(*, db, game_id: int, game_slug: str, state: dict, summary: dict) -> int:
+def persist_session_random(*, db, game_id: int, game_key: str, state: dict, summary: dict) -> int:
     per   = state.get("per_puzzle") or []
     stats = state.get("stats") or {}
 
@@ -572,7 +572,7 @@ def persist_session_random(*, db, game_id: int, game_slug: str, state: dict, sum
     sess_id = None
     for _ in range(6):  # regenerate on rare UNIQUE hits
         try:
-            params = {**base, "public_code": public_code_for(game_slug, sid_cookie, client_id)}
+            params = {**base, "public_code": public_code_for(game_key, sid_cookie, client_id)}
             sess_id = db.session.execute(stmt, params).scalar_one()
             db.session.commit()
             break
@@ -588,7 +588,7 @@ def persist_session_random(*, db, game_id: int, game_slug: str, state: dict, sum
     _persist_plays(db, state, game_id, sess_id)
     return sess_id
 
-def persist_session_from_id(*, db, game_id: int, game_slug: str, state: Dict, summary: Dict) -> int:
+def persist_session_from_id(*, db, game_id: int, game_key: str, state: Dict, summary: Dict) -> int:
     """Insert session first, then set deterministic public_code derived from PK (always unique)."""
     per = state.get("per_puzzle") or []
     stats = state.get("stats") or {}
@@ -616,7 +616,7 @@ def persist_session_from_id(*, db, game_id: int, game_slug: str, state: Dict, su
         skipped=int(stats.get("skipped",0)), incorrect=int(stats.get("answer_wrong",0)),
         help_all=int(stats.get("help_all",0)), summary_json=summary,
     )).scalar_one()
-    code = public_code_from_id(game_slug, sess_id)
+    code = public_code_from_id(game_key, sess_id)
     db.session.execute(text("UPDATE app.game_sessions SET public_code=:c WHERE id=:id"),
                        {"c": code, "id": sess_id})
     db.session.commit()

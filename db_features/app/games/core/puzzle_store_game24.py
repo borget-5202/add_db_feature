@@ -113,7 +113,7 @@ class Game24Store:
         }
 
     def _load_from_db(self) -> List[G24Puzzle]:
-        game = Game.query.filter_by(slug="game24").first()
+        game = Game.query.filter_by(game_key="game24").first()
         if not game:
             return []
         rows = (Puzzle.query
