@@ -1,17 +1,7 @@
-<!doctype html>
-<html>
-<head>
-  <meta charset="utf-8" />
-  <title>24-Point Card Game</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <!-- Keep your Flask paths exactly like this -->
+{% extends "base.html" %}
+
+{% block content %}
   <link rel="stylesheet" href="{{ url_for('games_assets_bp.static', filename='css/style.css') }}">
-  <style nonce="{{ csp_nonce }}">
-    /* CSP nonce block - can be empty or used for critical CSS if needed */
-  </style>
-</head>
-<body>
-  <a class="back-home" href="{{ url_for('home.index') }}">← Home</a>
 
   <!-- Confirmation Modals -->
   <div id="restartModal" class="modal-backdrop">
@@ -171,7 +161,7 @@
         <!-- Answer box -->
         <div class="answer-container">
           <input id="answer" class="answer-box" type="text"
-                 placeholder="Example: (A+Q)*(T-1) — T=10, ^=power"
+                 placeholder="Example: (A+Q)*(T-1) — T=10, ^=power — Make TARGET"
                  autocomplete="off" />
           <div id="answerFeedback" class="answer-feedback"></div>
         </div>
@@ -190,7 +180,6 @@
           <button id="help" class="info-btn">Help (H)</button>
           <button id="helpAll" class="info-btn">Help All (Shift+H)</button>
           <button id="restart" class="danger-btn">Restart(R)</button>
-          <button id="summaryBtn" class="secondary-btn">Peek (Shift+S)</button>
           <button id="exit" class="secondary-btn">Exit(X)</button>
         </div>
 
@@ -226,12 +215,12 @@
 
       <div id="basic" class="tab-content" style="display:block;">
         <ul>
-          <li>Use each of the 4 numbers exactly once to make <b>24</b>.</li>
-          <li>Allowed: <b>+</b> <b>−</b> <b>*</b> <b>/</b> <b>^</b> (power) and parentheses.</li>
-          <li>Ranks: <b>A=1</b>, <b>J=11</b>, <b>Q=12</b>, <b>K=13</b>, <b>T=10</b>.</li>
-          <li>Shortcuts: <b>Enter</b>=Check, <b>D</b>=Deal, <b>N</b>=No solution,
-              <b>H</b>/<b>Shift+H</b>=Help, <b>R</b>=Restart, <b>X</b>=Exit,
-              <b>Shift+S</b>=Peek Summary.</li>
+              <li>Use each of the 4 numbers exactly once to make <b id="targetValue">24</b>.</li>
+              <li>Allowed: <b>+</b> <b>−</b> <b>*</b> <b>/</b> <b>^</b> (power) and parentheses.</li>
+              <li>Ranks: <b>A=1</b>, <b>J=11</b>, <b>Q=12</b>, <b>K=13</b>, <b>T=10</b>.</li>
+              <li>Choose different targets (24, 36, 10) in Settings.</li>
+              <li>Shortcuts: <b>Enter</b>=Check, <b>D</b>=Deal, <b>N</b>=No solution,
+                  <b>H</b>/<b>Shift+H</b>=Help, <b>R</b>=Restart, <b>X</b>=Exit,
         </ul>
       </div>
 
@@ -302,6 +291,33 @@
   </script>
   <script src="{{ url_for('game24.static', filename='js/script.js') }}"></script>
 
-</body>
-</html>
+  <script nonce="{{ csp_nonce }}">
+  // Update game title and instructions based on selected target
+  function updateGameTitle(target) {
+    const title = document.querySelector('.game-title');
+    const subtitle = document.querySelector('.game-subtitle');
+    const targetValue = document.querySelector('#targetValue');
 
+    if (title) title.textContent = `${target}-Point Card Game`;
+    if (subtitle) subtitle.textContent = `Use exactly 4 cards with + − × ÷ ^ (and parentheses) to make ${target}`;
+    if (targetValue) targetValue.textContent = target;
+  }
+
+  // Initialize on page load
+  document.addEventListener('DOMContentLoaded', function() {
+    const initTarget = window.INIT_TARGET || 24;
+    updateGameTitle(initTarget);
+
+    // Update when target changes
+    const targetSelect = document.getElementById('targetSelect');
+    if (targetSelect) {
+      targetSelect.addEventListener('change', function() {
+        if (this.value !== 'custom') {
+          updateGameTitle(parseInt(this.value));
+        }
+      });
+    }
+  });
+</script>
+
+{% endblock %}
