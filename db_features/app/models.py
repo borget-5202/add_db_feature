@@ -55,7 +55,7 @@ class Game(db.Model):
     __tablename__ = "games"
     __table_args__ = {"schema": "app"}
     game_id = db.Column("game_id", db.BigInteger, primary_key=True)
-    slug = db.Column(db.Text, unique=True, nullable=False)      # e.g. 'game24'
+    game_key = db.Column(db.Text, unique=True, nullable=False)      # e.g. 'game24'
     title = db.Column(db.Text, nullable=False)
     subject = db.Column(db.Text, nullable=False, default="math")
     modality = db.Column(db.Text, nullable=False)               # 'cards'|'real_world'
@@ -133,7 +133,7 @@ class Organization(db.Model):
 
     id   = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(120), nullable=False, unique=True)
-    slug = db.Column(db.String(120), nullable=True, unique=True)
+    game_key = db.Column(db.String(120), nullable=True, unique=True)
 
     # JSONB backing column is named "metadata" in DB; Python attribute is "meta"
     meta = db.Column("metadata", JSONB, nullable=False,
