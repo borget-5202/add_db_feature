@@ -1,1 +1,246 @@
+{% extends "base.html" %}
 
+{% block content %}
+  <link rel="stylesheet" href="{{ url_for('games_assets_bp.static', filename='css/style.css') }}">
+  <style>
+    /* Sum4 specific overrides */
+    .sum4-wrapper {
+      max-width: var(--max-w);
+      margin: 0 auto;
+      padding: 20px;
+    }
+    
+    /* Ensure cards are properly centered */
+    #cards {
+      display: flex !important;
+      justify-content: center !important;
+      align-items: center !important;
+      gap: 16px !important;
+      margin: 20px auto !important;
+      width: fit-content !important;
+    }
+
+    /* Pool section styling */
+    .pool-section {
+      border-top: 1px solid #e5e7eb;
+      padding-top: 16px;
+      margin-top: 16px;
+    }
+    
+    .pool-section h4 {
+      margin: 0 0 12px 0;
+      color: #374151;
+      font-size: 14px;
+      font-weight: 600;
+    }
+  </style>
+
+  <!-- Summary Modal -->
+  <div class="modal-backdrop" id="summaryBackdrop" role="dialog" aria-modal="true" style="display:none;">
+    <div class="modal">
+      <div class="modal-head">
+        <h3>Session Summary</h3>
+        <button class="close" id="summaryClose">✕</button>
+      </div>
+      <div id="summary-report" style="max-height:50vh; overflow:auto;"></div>
+      <div class="actions" style="margin-top:12px; display:flex; gap:8px; justify-content:flex-end;">
+        <a class="secondary-btn" id="summaryCsv" href="/games/sum_4_cards/api/export.csv?persisted=1">Download CSV</a>
+        <button id="summaryExit" class="danger-btn">Exit</button>
+        <button id="summaryResume" class="secondary-btn">Resume</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- How-to Modal -->
+  <div class="modal-backdrop" id="howToBackdrop" role="dialog" aria-modal="true" style="display:none;">
+    <div class="modal">
+      <div class="modal-head">
+        <h3>How it works</h3>
+        <button class="close" id="howToClose">✕</button>
+      </div>
+      <ul>
+        <li>Reveal style decides how many cards you see first.</li>
+        <li>Type the running sum of the visible cards and press <b>Check</b>.</li>
+        <li>If correct, the next card(s) reveal. Finish all steps to complete the hand.</li>
+        <li><b>Difficulty</b> filters which cases are dealt (easy / medium / hard / auto).</li>
+        <li><b>Pool</b> lets you practice specific cases or run a timed competition.</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="wrap">
+    <header class="game-header">
+      <h1 class="game-title">Sum 4 Cards</h1>
+      <p class="game-subtitle">Add the revealed cards step-by-step (or all at once)</p>
+    </header>
+
+    <div class="panel">
+      <!-- FIXED TOPLINE - matches Game24 exactly -->
+      <div class="topline" style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; width: 100%;">
+        <span id="question" style="font-weight: 600; margin: 0; flex: 1;">Ready — press Deal</span>
+        
+        <div class="right-tools" style="display: flex; align-items: center; gap: 12px;">
+          <!-- Timer -->
+          <span id="timer" style="font-variant-numeric: tabular-nums; background: #eef2ff; color: #4B286D; padding: 6px 12px; border-radius: 8px; border: 1px solid #e5e7eb; font-weight: 600; font-size: 14px; white-space: nowrap;">
+            00:00.0
+          </span>
+
+          <!-- Single Settings Panel (like Game24) -->
+          <details class="settings">
+            <summary>Settings</summary>
+            <div style="margin-top: 10px; display: flex; flex-direction: column; gap: 16px; min-width: 300px;">
+              <!-- Game Settings -->
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                <label style="display: flex; flex-direction: column; gap: 4px;">
+                  Reveal Mode
+                  <select id="revealMode">
+                    <option value="step">Step by step</option>
+                    <option value="all">All at once</option>
+                  </select>
+                </label>
+
+                <label style="display: flex; flex-direction: column; gap: 4px;">
+                  Difficulty
+                  <select id="difficulty">
+                    <option value="">Auto</option>
+                    <option value="easy">Easy</option>
+                    <option value="medium">Medium</option>
+                    <option value="hard">Hard</option>
+                  </select>
+                </label>
+              </div>
+
+              <!-- Auto-deal -->
+              <label style="display: flex; align-items: center; gap: 8px;">
+                <input id="autoDeal" type="checkbox">
+                Auto-deal next hand
+              </label>
+
+              <!-- Pool Section (like Game24) -->
+              <div class="pool-section">
+                <h4>Practice & Competition</h4>
+                
+                <!-- Single case mode -->
+                <div style="margin-bottom: 12px;">
+                  <label style="display: block; margin-bottom: 6px; font-size: 13px; font-weight: 500;">Jump to Case ID</label>
+                  <div style="display: flex; gap: 8px; align-items: center;">
+                    <input id="singleCaseId" type="number" min="1" max="1820" placeholder="e.g., 125" 
+                           style="flex: 1; padding: 6px 8px; border: 1px solid #e5e7eb; border-radius: 6px; font-size: 13px;">
+                    <button id="singleGo" class="info-btn" style="padding: 6px 12px; font-size: 13px;">Go</button>
+                  </div>
+                </div>
+
+                <!-- Pool mode selector -->
+                <div style="margin-bottom: 12px;">
+                  <label style="display: block; margin-bottom: 6px; font-size: 13px; font-weight: 500;">Pool Mode</label>
+                  <select id="poolState" style="width: 100%; padding: 6px 8px; border: 1px solid #e5e7eb; border-radius: 6px; font-size: 13px;">
+                    <option value="single">Single Case (Normal)</option>
+                    <option value="custom">Custom Pool (Practice)</option>
+                    <option value="competition">Competition (Timed)</option>
+                  </select>
+                </div>
+
+                <!-- Pool input (hidden in single mode) -->
+                <div id="poolRow" style="display: none;">
+                  <label style="display: block; margin-bottom: 6px; font-size: 13px; font-weight: 500;">Case IDs (1-25, comma separated)</label>
+                  <input id="poolInput" type="text" placeholder="e.g., 12, 45, 78, 91" 
+                         style="width: 100%; padding: 6px 8px; border: 1px solid #e5e7eb; border-radius: 6px; font-size: 13px; margin-bottom: 8px;">
+                  
+                  <!-- Competition duration -->
+                  <div id="compWrap" style="display: none; margin-bottom: 12px;">
+                    <label style="display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 500;">
+                      Duration (minutes):
+                      <input id="compMinutes" type="number" min="1" max="60" value="5" 
+                             style="width: 70px; padding: 4px 6px; border: 1px solid #e5e7eb; border-radius: 4px;">
+                    </label>
+                  </div>
+
+                  <div style="display: flex; gap: 8px;">
+                    <button id="savePool" class="primary-btn" style="padding: 6px 12px; font-size: 13px;">Save Pool</button>
+                    <button id="clearPool" class="secondary-btn" style="padding: 6px 12px; font-size: 13px;">Clear</button>
+                  </div>
+                  
+                  <small style="color: #666; display: block; margin-top: 8px; font-size: 0.75rem; line-height: 1.3;">
+                    Enter 1-25 case IDs (1-1820). Custom: help enabled. Competition: help disabled, timed.
+                  </small>
+                </div>
+              </div>
+            </div>
+          </details>
+
+          <!-- How-to link -->
+          <span class="link" id="howtoLink" title="How to play" style="display: inline-flex; align-items: center; justify-content: center; height: 32px; width: 32px; border-radius: 8px; border: 1px solid #e5e7eb; background: #fff; font-weight: 700; text-decoration: none; cursor: pointer;">?</span>
+        </div>
+      </div>
+
+      <div class="board">
+        <!-- Cards -->
+        <div id="cards" class="sum4-cards-container"
+             data-game-key="{{ game_key }}"
+             data-back="{{ url_for('games_assets_bp.static', filename='cards/back.png') }}"
+             data-void="{{ url_for('games_assets_bp.static', filename='cards/void.png') }}"
+             data-init='{{ initial_cfg | tojson }}'>
+          <img class="sum4-card" id="card-0" alt="back">
+          <img class="sum4-card" id="card-1" alt="back">
+          <img class="sum4-card" id="card-2" alt="back">
+          <img class="sum4-card" id="card-3" alt="back">
+        </div>
+
+        <!-- Message -->
+        <div id="msg" class="status"></div>
+
+        <!-- Answer + keypad -->
+        <div class="answer-container" style="display: grid; grid-template-columns: 1fr auto; gap: 8px; margin: 16px auto; max-width: 500px;">
+          <input id="answer" class="sum4-answer-box" type="number" inputmode="numeric" 
+                 placeholder="Enter running sum…" autocomplete="off" />
+          <div id="answerFeedback" class="answer-feedback"></div>
+        </div>
+
+        <!-- Numeric keypad -->
+        <div class="op-panel">
+          <div class="ops-wrap" id="numPad" style="max-width: 500px; margin: 0 auto;">
+            <button data-num="7">7</button>
+            <button data-num="8">8</button>
+            <button data-num="9">9</button>
+            <button data-act="back">⌫</button>
+            <button data-num="4">4</button>
+            <button data-num="5">5</button>
+            <button data-num="6">6</button>
+            <button data-act="clear">Clear</button>
+            <button data-num="1">1</button>
+            <button data-num="2">2</button>
+            <button data-num="3">3</button>
+            <button data-num="0" style="grid-column: span 2;">0</button>
+          </div>
+        </div>
+
+        <!-- Main action buttons -->
+        <div class="button-row" style="max-width: 500px; margin: 16px auto;">
+          <button id="check" class="sum4-check-btn">Check (Enter)</button>
+          <button id="deal" class="sum4-deal-btn">Deal</button>
+          <button id="help" class="sum4-help-btn">Help</button>
+          <button id="skip" class="sum4-skip-btn">Skip</button>
+          <button id="restart" class="sum4-restart-btn">Restart</button>
+          <button id="exit" class="sum4-exit-btn">Exit</button>
+        </div>
+
+        <!-- Help panel -->
+        <div id="solutionPanel" style="display: none; max-width: 500px; margin: 16px auto;">
+          <div id="solutionMsg"></div>
+        </div>
+
+        <!-- Stats -->
+        <div class="stats">
+          <span id="played">Played: 0</span>
+          <span id="solved">Solved: 0</span>
+          <span id="helps">Helps: 0</span>
+          <span id="incorrect">Incorrect: 0</span>
+          <span id="skipped">Skipped: 0</span>
+          <span id="totalTime">Time: 00:00</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="{{ url_for('sum4.static', filename='js/sum4.js') }}"></script>
+{% endblock %}
