@@ -1,13 +1,28 @@
 {% extends "base.html" %}
-{% block title %}Forgot Password{% endblock %}
-{% block content %}
-<h1>Forgot Password</h1>
-<form method="post" action="{{ url_for('auth.forgot') }}">
-  <label>Username or Email
-    <input name="username_or_email" required>
-  </label>
-  <button type="submit">Send reset link</button>
-</form>
-<p><a href="{{ url_for('auth.login') }}">Back to login</a></p>
-{% endblock %}
 
+{% block title %}Forgot Password - Little Teachers{% endblock %}
+
+{% block content %}
+<div class="card">
+  <h1>Reset Your Password 🔒</h1>
+  
+  <form method="post" action="{{ url_for('auth.forgot') }}">
+    <div class="form-group">
+      <label for="username_or_email">Username or Email</label>
+      <input type="text" id="username_or_email" name="username_or_email" class="form-control" required 
+             placeholder="Enter your username or email">
+    </div>
+    
+    <button type="submit" class="btn btn-primary" style="width: 100%; padding: 0.75rem; margin-top: 1rem;">
+      Send Reset Link
+    </button>
+  </form>
+  
+  <div style="text-align: center; margin-top: 1.5rem; padding-top: 1.5rem; border-top: 1px solid #eee;">
+    <a href="{{ url_for('auth.login') }}" 
+       style="color: #667eea; text-decoration: none; font-weight: 500;">
+      ← Back to login
+    </a>
+  </div>
+</div>
+{% endblock %}
