@@ -5,39 +5,229 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>{% block title %}Little Teachers{% endblock %}</title>
   <style>
-    body { font-family: system-ui, Arial, sans-serif; margin: 2rem; }
-    .flash { padding: .5rem .75rem; margin: .5rem 0; border-radius: 6px; }
-    .flash.error { background:#fee; border:1px solid #fbb; }
-    .flash.info  { background:#eef; border:1px solid #bbf; }
-    .flash.success{background:#efe; border:1px solid #bfb; }
-    form label { display:block; margin:.5rem 0; }
-    input { padding:.4rem; }
-    button { padding:.5rem .9rem; cursor:pointer; }
+    /* Reset and base styles */
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { 
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; 
+      line-height: 1.6;
+      color: #333;
+      background-color: #f8f9fa;
+    }
+    
+    /* Header Styles */
+    .header {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 1rem 2rem;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    }
+    
+    .header-content {
+      max-width: 1200px;
+      margin: 0 auto;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    
+    .logo {
+      font-size: 1.5rem;
+      font-weight: bold;
+      text-decoration: none;
+      color: white;
+    }
+    
+    .nav-links {
+      display: flex;
+      gap: 2rem;
+      align-items: center;
+    }
+    
+    .nav-links a {
+      color: white;
+      text-decoration: none;
+      padding: 0.5rem 1rem;
+      border-radius: 5px;
+      transition: background-color 0.3s;
+    }
+    
+    .nav-links a:hover {
+      background-color: rgba(255,255,255,0.2);
+    }
+    
+    .user-info {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+    
+    .user-welcome {
+      font-weight: 500;
+    }
+    
+    .btn {
+      padding: 0.5rem 1rem;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+      text-decoration: none;
+      display: inline-block;
+      transition: all 0.3s;
+      font-size: 0.9rem;
+    }
+    
+    .btn-outline {
+      background: transparent;
+      border: 1px solid white;
+      color: white;
+    }
+    
+    .btn-outline:hover {
+      background: white;
+      color: #667eea;
+    }
+    
+    .btn-primary {
+      background: #28a745;
+      color: white;
+    }
+    
+    .btn-primary:hover {
+      background: #218838;
+    }
+    
+    /* Main content */
+    .main-content {
+      max-width: 1200px;
+      margin: 2rem auto;
+      padding: 0 2rem;
+    }
+    
+    /* Flash messages */
+    .flash { 
+      padding: 1rem 1.5rem; 
+      margin: 1rem 0; 
+      border-radius: 8px;
+      border-left: 4px solid;
+    }
+    
+    .flash.error { 
+      background:#fee; 
+      border-left-color: #dc3545;
+      color: #721c24;
+    }
+    
+    .flash.info  { 
+      background:#eef; 
+      border-left-color: #17a2b8;
+      color: #0c5460;
+    }
+    
+    .flash.success { 
+      background:#efe; 
+      border-left-color: #28a745;
+      color: #155724;
+    }
+    
+    /* Form styles */
+    .form-group {
+      margin-bottom: 1rem;
+    }
+    
+    .form-group label {
+      display: block;
+      margin-bottom: 0.5rem;
+      font-weight: 500;
+    }
+    
+    .form-control {
+      width: 100%;
+      padding: 0.75rem;
+      border: 1px solid #ddd;
+      border-radius: 5px;
+      font-size: 1rem;
+    }
+    
+    .form-control:focus {
+      outline: none;
+      border-color: #667eea;
+      box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.25);
+    }
+    
+    /* Card styles for forms */
+    .auth-card {
+      background: white;
+      border-radius: 10px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+      padding: 2rem;
+      max-width: 400px;
+      margin: 2rem auto;
+    }
+    
+    .auth-card h1 {
+      margin-bottom: 1.5rem;
+      text-align: center;
+      color: #333;
+    }
+    
+    /* Responsive */
+    @media (max-width: 768px) {
+      .header-content {
+        flex-direction: column;
+        gap: 1rem;
+        text-align: center;
+      }
+      
+      .nav-links {
+        flex-direction: column;
+        gap: 0.5rem;
+      }
+      
+      .main-content {
+        padding: 0 1rem;
+      }
+    }
   </style>
 </head>
 <body>
-  <nav style="margin-bottom:1rem;">
-    <a href="/">Home</a>
-    {% if current_user.is_authenticated %}
-      <span style="margin-left:.5rem;">Hi, {{ current_user.username }}</span>
-      <a href="{{ url_for('auth.logout') }}" style="margin-left:1rem;">Logout</a>
-    {% else %}
-      <a href="{{ url_for('auth.login') }}" style="margin-left:1rem;">Login</a>
-      <a href="{{ url_for('auth.register') }}" style="margin-left:.5rem;">Register</a>
-      <a href="{{ url_for('auth.forgot') }}" style="margin-left:.5rem;">Forgot?</a>
-    {% endif %}
-  </nav>
+  <!-- Professional Header -->
+  <header class="header">
+    <div class="header-content">
+      <a href="{{ url_for('home.index') }}" class="logo">
+        🎯 Little Teachers
+      </a>
+      
+      <nav class="nav-links">
+        <a href="{{ url_for('home.index') }}">Home</a>
+        {% if current_user.is_authenticated %}
+          <div class="user-info">
+            <span class="user-welcome">👋 Hi, {{ current_user.username }}</span>
+            <a href="{{ url_for('auth.logout') }}" class="btn btn-outline">Logout</a>
+          </div>
+        {% else %}
+          <div class="user-info">
+            <a href="{{ url_for('auth.login') }}" class="btn btn-outline">Login</a>
+            <a href="{{ url_for('auth.register') }}" class="btn btn-primary">Sign Up</a>
+          </div>
+        {% endif %}
+      </nav>
+    </div>
+  </header>
 
-  {% with msgs = get_flashed_messages(with_categories=true) %}
-    {% if msgs %}
-      {% for category, message in msgs %}
-        <div class="flash {{ category }}">{{ message }}</div>
-      {% endfor %}
-    {% endif %}
-  {% endwith %}
+  <!-- Main Content -->
+  <main class="main-content">
+    <!-- Flash Messages -->
+    {% with msgs = get_flashed_messages(with_categories=true) %}
+      {% if msgs %}
+        {% for category, message in msgs %}
+          <div class="flash {{ category }}">{{ message }}</div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
 
-  {% block content %}{% endblock %}
+    <!-- Page Content -->
+    {% block content %}{% endblock %}
+  </main>
 
 </body>
 </html>
-
