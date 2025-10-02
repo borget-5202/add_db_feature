@@ -477,3 +477,68 @@ button:active{ transform: translateY(1px); }
 .help-line:last-child,
 .sol-line:last-child { border-bottom: 0; }
 
+/* ==================================================================
+ * Sum4 specific rules in common CSS i
+   ================================================================== */
+.game-sum4 #cards {
+  /* Sum4-specific card layout if needed */
+}
+
+.game-sum4 .button-row {
+  max-width: 500px;
+}
+
+.game-sum4 .ops-wrap#numPad {
+  max-width: 500px;
+}
+/* =========================
+   4B) NUMBER PANEL (for Sum4 game)
+   ========================= */
+.num-panel {
+  background: transparent;
+  border-radius: 12px;
+  padding: 14px 8px;
+  margin: 16px auto 8px;
+  width: 100%;
+  max-width: calc(4 * var(--card-w) + 3 * 12px);
+}
+
+.num-wrap {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  max-width: 500px;
+  margin: 0 auto;
+}
+
+.num-wrap button {
+  min-height: var(--op-btn-h);
+  border: none;
+  border-radius: 10px;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 1.2rem;
+  line-height: 1;
+  color: #111;
+  background: var(--op-green);
+  transition: all 0.1s ease;
+}
+
+/* Special styling for action buttons in numpad */
+.num-wrap button[data-act] {
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+/* Span the 0 button across two columns */
+.num-wrap button[data-num="0"] {
+  grid-column: span 2;
+}
+
+.num-wrap button:hover {
+  opacity: .92;
+}
+
+.num-wrap button:active {
+  transform: translateY(1px);
+}
