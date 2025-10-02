@@ -1,142 +1,89 @@
-/* app/games/game24/static/css/style.css — CLEAN ORGANIZED VERSION
-   -----------------------------------------------------------------
-   Goals:
-   - Keep all selectors/API stable (drop‑in, non‑breaking)
-   - Centralize colors/tokens in :root
-   - Consistent buttons, operators, cards, modals
-   - Accessibility: focus-visible, reduced motion
-   - Light responsive tweaks (mobile-friendly)
-*/
-/* app/games/game24/static/css/style.css — UPDATED WITH BETTER RESPONSE AREA & BUTTONS
-   -----------------------------------------------------------------
-   Fixed: response message positioning, moved "Ready" message, button area width
+
+/* app/games/game24/static/css/style.css — Rewritten based on big_card_style.css
+   - Single source of truth for sizes/colors
+   - Compatibility with current play_html template (cards, ops, buttons, modals)
+   - Fixed card sizing to match old page exactly
 */
 
-/* ==================================================================
+/* =========================
    0) TOKENS
-   ================================================================== */
+   ========================= */
 :root{
-  /* Surfaces & text - from old_style.css */
-  --bg: #ccffee;           /* soft blue page background */
-  --panel: #ffffff;        /* white content panels */
-  --brand: #00e64d;        /* strong green header/accent */
-  --text: #1a1a1a;         /* near-black body text */
-  --muted: #667085;        /* secondary text */
+  /* Surfaces & text */
+  --bg:    #ccffee;
+  --panel: #ffffff;
+  --brand: #00e64d;    /* header/accent (old version green) */
+  --text:  #1a1a1a;
+  --muted: #667085;
 
-  /* Semantic */
+  /* Status */
   --success: #2e7d32;
   --error:   #d32f2f;
   --warning: #f59e0b;
   --info:    #0288d1;
 
-  /* Operator palette - enhanced from both */
-  --op-plus:      #90caf9;  /* light blue */
-  --op-minus:     #f7b2d9;  /* pink */
-  --op-times:     #a5d6a7;  /* green */
-  --op-divide:    #ffd59e;  /* orange */
-  --op-parens:    #d8b4fe;  /* purple for parentheses */
-  --op-neut:      #e5e7eb;  /* gray fallback */
+  /* Operators (old palette) */
+  --op-plus:   #90caf9;  /* blue */
+  --op-minus:  #f7b2d9;  /* pink */
+  --op-times:  #a5d6a7;  /* green */
+  --op-divide: #ffd59e;  /* orange */
+  --op-parens: #d8b4fe;  /* purple */
+  --op-neut:   #e5e7eb;  /* gray */
+  --op-green:   #d1fae5;  /* gray */
 
-  /* Action buttons */
-  --act-primary:  #90caf9;
-  --act-secondary:#a5d6a7;
-  --act-accent:   #ffd59e;
-  --act-danger:   #f7b2d9;
+  /* Buttons (derived from operators) */
+  --act-primary:   var(--op-plus);
+  --act-secondary: var(--op-times);
+  --act-danger:    var(--op-minus);
+  --act-blue:  #007bb5;
+  --act-vib:   #2563eb;
+  --act-accent:    var(--act-vib);
 
-  /* NYU Stern Colors - ADD THIS LINE */
-  --stern-purple: #4B286D;
-  --stern-purple-dark: #3a1f55;
-
-  /* Layout scales - PROPER POKER CARD RATIO (5:7) */
-  --board-max: 800px;
-  --card-w: 130px;         /* Width from original style.css */
-  --card-h: 182px;         /* Height from original style.css (maintains 5:7 ratio) */
-  --op-btn-h: 56px;
-
-  /* Elevation & radii */
-  --shadow: 0 4px 6px -1px rgba(0,0,0,.1), 0 2px 4px -1px rgba(0,0,0,.06);
-  --ring:   0 0 0 3px rgba(2,136,209,.15);
-  --r-sm:   10px;
-  --r-md:   14px;
-  --r-lg:   18px;
-
-  /* Sizes - WIDER for better experience */
+  /* Layout */
   --max-w: 980px;
   --page-w: 980px;
+  --shadow: 0 4px 6px -1px rgba(0,0,0,.1), 0 2px 4px -1px rgba(0,0,0,.06);
 
-  /* Z-index tokens */
-  --z-modal: 10000;
-  --z-modal-content: 10001;
-  --z-toast: 11000;
+  /* Board / card sizing — match old page */
+  --board-max: 640px;            /* total width available for 4 cards */
+  --card-h: 182px;               /* 5:7 ratio with width 130px */
+  --card-w: 130px;
+  --op-btn-h: 56px;
+
+  /* Card layout calculations */
+  --cards-gap: 12px;
+  --cards-width: calc(4 * var(--card-w) + 3 * var(--cards-gap));
+
+  /* Neutral palette */
+  --neutral-50:  #f1f5f9;
+  --neutral-200: #e5e7eb;
+  --neutral-400: #9ca3af;
+  --neutral-500: #cbd5e1;
+  --neutral-600: #64748b;
+  --neutral-700: #475569;
+  --4background: #007bb5;
 }
 
-/* Background from old_style.css */
+/* =========================
+   1) PAGE & HEADER
+   ========================= */
+html,body{ height:100%; }
 body{
+  margin:0;
+  font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+  color: var(--text);
+  background: var(--bg);
+  line-height: 1.5;
+
+  /* Soft background ornaments (IXL vibe) */
   background-image:
     radial-gradient(circle at 14% 46%, rgba(46,125,50,0.06) 0%, transparent 25%),
     radial-gradient(circle at 84% 22%, rgba(2,136,209,0.06) 0%, transparent 25%);
   background-attachment: fixed;
 }
 
-/* Dark-mode skeleton */
-@media (prefers-color-scheme: dark){
-  :root{
-    --bg:    #0f1418;
-    --panel: #101820;
-    --text:  #e8eef3;
-    --muted: #9fb0bf;
-  }
-}
+.wrap{ max-width: var(--max-w); margin: 0 auto; padding: 20px; }
 
-/* Motion accessibility */
-@media (prefers-reduced-motion: reduce){
-  *, *::before, *::after { transition:none !important; animation:none !important; }
-  html { scroll-behavior: auto !important; }
-}
-
-/* ==================================================================
-   1) GLOBAL ELEMENTS
-   ================================================================== */
-*{ box-sizing:border-box; }
-html, body{ height:100%; }
-body{
-  margin:0; padding:0; background:var(--bg); color:var(--text);
-  font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
-  line-height: 1.5;
-}
-img{ max-width:100%; display:block; }
-
-h1,h2,h3{ margin:0 0 8px; line-height:1.2; }
-p{ margin:0 0 10px; color:var(--text); }
-a{ color:var(--info); text-decoration:none; }
-a:hover{ text-decoration:underline; }
-
-.container{ max-width:var(--max-w); margin:0 auto; padding:20px; }
-.panel{
-  background:var(--panel); border-radius:var(--r-md); box-shadow:var(--shadow);
-  padding:16px; position:relative;
-  max-width: var(--page-w) !important;
-  margin-left: auto !important;
-  margin-right: auto !important;
-}
-
-/* Back home link from old_style.css */
-.back-home {
-  position: absolute;
-  left: 16px;
-  top: 12px;
-  font-weight: 600;
-  text-decoration: none;
-  color: var(--brand);
-}
-.back-home:hover {
-  text-decoration: underline;
-}
-
-/* ==================================================================
-   2) HEADER / STATS / LAYOUT
-   ================================================================== */
-/* Header from old_style.css - much better design */
 .game-header{
   text-align:center;
   margin-bottom:16px;
@@ -144,119 +91,108 @@ a:hover{ text-decoration:underline; }
   color:#fff;
   padding:16px;
   border-radius:12px;
-  box-shadow: var(--shadow);
+  box-shadow:var(--shadow);
   max-width: var(--page-w);
   margin: 0 auto 16px;
 }
 .game-title{ margin:0; font-size:2rem; color:#fff; }
 .game-subtitle{ margin:6px 0 0; color: rgba(255,255,255,.92); }
 
-/* Topline layout - FIXED: puzzle info on left, tools on right */
+/* =========================
+   2) TOPLINE / SETTINGS
+   ========================= */
+.panel{
+  background: var(--panel);
+  border-radius:12px;
+  padding:12px 12px 16px;
+  box-shadow: var(--shadow);
+  max-width: var(--page-w);
+  margin: 0 auto 16px;
+}
+
 .topline{
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 10px;
+  display:flex; align-items:center; gap:10px; flex-wrap:wrap; justify-content:center;
+  margin-bottom:10px;
+}
+#question{ font-weight:600; }
+#timer{
+  margin-left:auto;
+  font-variant-numeric: tabular-nums;
+  background:#eef2ff; color:var(--brand);
+  padding:4px 8px; border-radius:8px; border:1px solid #e5e7eb;
+}
+.right-tools{ display:flex; align-items:center; gap:10px; }
+details.settings summary{ cursor:pointer; color:#555; }
+details.settings[open]{ background:#fff; border-radius:8px; padding:8px 10px; box-shadow:0 2px 8px rgba(0,0,0,.06); }
+.settings-row{ display:flex; gap:12px; align-items:center; margin-top:6px; }
+.link{ color:#0a58ca; text-decoration: underline; cursor:pointer; }
+
+/* =========================
+   3) BOARD & CARDS
+   ========================= */
+.board {
+  max-width: var(--board-max);
+  margin: 0 auto;
   width: 100%;
 }
-#question{
-  font-weight:600;
-  margin: 0;
-  flex: 1;
-}
-.right-tools{
-  display:flex;
-  align-items:center;
-  gap: 12px;
-}
 
-/* Timer styling - MOVED to right side */
-#timer{
-  font-variant-numeric: tabular-nums;
-  background:#eef2ff;
-  color:var(--brand);
-  padding:6px 12px;
-  border-radius:8px;
-  border:1px solid #e5e7eb;
-  font-weight: 600;
-  font-size: 14px;
-  white-space: nowrap;
-}
-
-/* Stats from old_style.css */
-.stats{
-  display:flex; justify-content:center; gap:14px; flex-wrap:wrap;
-  color:#777; font-size:.95rem; margin-top:12px; width:100%;
-}
-.stats span{ min-width:100px; display:inline-block; }
-
-/* ==================================================================
-   3) CARD AREA - PROPER POKER CARD RATIO (5:7)
-   ================================================================== */
-.board{ max-width: var(--board-max); margin: 0 auto; width:100%; }
-
-.cards{
+/* Cards grid - SINGLE SOURCE OF TRUTH */
+#cards.cards {
   display: grid;
   grid-template-columns: repeat(4, var(--card-w));
-  gap: 12px;
-  justify-content: center;
-  margin: 12px auto;
-  width: fit-content;
+  gap: var(--cards-gap, 12px); /* Use variable with fallback */
+  width: var(--cards-width, fit-content); /* Use variable with fallback */
   max-width: 100%;
+  margin: 12px auto;
+  justify-content: center;
 }
 
-.card{
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  border-radius:12px;
-  background:#fff;
-  box-shadow:var(--shadow);
-  height:var(--card-h);
-  width:var(--card-w);
+/* Card container styles - COMBINED RULES */
+#cards .card,
+#cards img.card,
+#cards .slot {
+  width: var(--card-w);
+  height: var(--card-h);
+  border-radius: 12px; /* Consistent radius */
+  background: transparent !important; /* No white background */
+  box-shadow: none !important; /* Cards have their own shadow */
   overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 !important; /* No extra padding */
 }
 
-.card img{
-  display:block;
-  width: 100%;
-  height: 100%;
-  object-fit: cover; /* Fill the card space properly */
-  border-radius:12px;
-  cursor:pointer;
+/* Card images - COMBINED RULES */
+#cards .card img,
+#cards .slot img,
+#cards img.card {
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: contain !important; /* Show full PNG, no crop */
+  border-radius: 0 !important; /* Avoid double rounded edge */
+  background: transparent !important;
 }
-
-/* Slot fallbacks */
-.slot{
-  width:var(--card-w);
-  height:var(--card-h);
-  border-radius:12px;
-  position:relative;
-}
-.slot.face{ background:#fff; box-shadow:var(--shadow); overflow:hidden; }
-.slot.back{ background:linear-gradient(135deg,#e8eaee,#d8dbe2); box-shadow:var(--shadow); }
-.slot.void{ background:transparent; border:2px dashed #d6d9df; }
-.slot img{
-  width:100%;
-  height:100%;
-  object-fit: cover; /* Fill properly */
-  border-radius:12px;
-}
-
-/* ==================================================================
-   4) OPERATORS & ACTION BUTTONS - FIXED WIDTH to match answer box
-   ================================================================== */
-/* Operator panel - CENTERED and matching answer box width */
+/* =========================
+   4) OPERATORS
+   ========================= */
 .op-panel{
-  background: var(--panel);
+  background: transparent; /* Changed from var(--panel) to transparent */
   border-radius: 12px;
   padding: 14px 8px;
-  margin: 16px auto 8px; /* Center the operator panel */
-  width: fit-content; /* Fit content width */
-  max-width: calc(4 * var(--card-w) + 3 * 12px); /* Match cards width */
-  box-shadow: var(--shadow);
+  margin: 16px auto 8px;
+  width: 100%;
+  max-width: calc(4 * var(--card-w) + 3 * 12px);
+  /* Remove box-shadow since you want it invisible */
 }
-.ops-wrap{ display:flex; justify-content:center; gap:8px; flex-wrap:wrap; }
+
+.ops-wrap{ 
+  display:flex; 
+  justify-content:center; 
+  gap:8px; 
+  flex-wrap:wrap; 
+}
+
 .ops-wrap button{
   min-width: var(--op-btn-h);
   height: var(--op-btn-h);
@@ -266,424 +202,226 @@ a:hover{ text-decoration:underline; }
   cursor: pointer;
   font-weight: 800;
   font-size: 24px;
-  transition: transform .06s ease, box-shadow .12s ease, opacity .12s ease, background-color .12s ease;
-  color: #fff;
-}
-.ops-wrap button[data-op="+"]{ background:var(--op-plus); font-size:28px; color: #111 ;}
-.ops-wrap button[data-op="-"]{ background:var(--op-minus); font-size:32px; padding-top:4px; color: #111; }
-.ops-wrap button[data-op="×"],
-.ops-wrap button[data-op="*"],
-.ops-wrap button[data-op="x"]{ background:var(--op-times); font-size:28px; color: #111; }
-
-/* Division symbol from old_style.css */
-.ops-wrap button[data-op="/"]{
-  background:var(--op-divide);
-  position:relative;
-}
-.ops-wrap button[data-op="/"]::before{
-  content:"÷";
-  position:absolute; top:50%; left:50%; transform:translate(-50%, -50%);
-  color: #000;
-  font-size: 22px; font-weight: 700;
-}
-.ops-wrap button[data-op="/"] span{ visibility:hidden; }
-/* Ensure caret/exponent operator is visible */
-button[data-op="^"],
-.op[data-op="^"] {
-  color: #111 !important;       /* black text */
-  text-shadow: none !important; /* avoid washed-out look */
+  line-height: 1;
+  color: #111;
 }
 
-/* PARENTHESES - Purple color */
+/* Individual operator colors - FIXED */
+.ops-wrap button[data-op="+"]{ background: var(--op-green); }
+.ops-wrap button[data-op="-"]{ background: var(--op-green); }
+.ops-wrap button[data-op="*"]{ background: var(--op-green); }
+.ops-wrap button[data-op="/"]{ background: var(--op-green); }
+.ops-wrap button[data-op="^"]{ background: var(--op-green); }
 .ops-wrap button[data-op="("],
-.ops-wrap button[data-op=")"]{
-  background: var(--op-parens);
-  color: #000;
-  font-size: 22px;
-}
+.ops-wrap button[data-op=")"]{ background: var(--op-green); }
 
 .ops-wrap button:hover{ opacity:.92; }
 .ops-wrap button:active{ transform: translateY(1px); }
 
-/* Action buttons - CENTERED and matching answer box width */
-.button-row{
-  display:flex;
-  justify-content:center;
-  gap:8px;
-  margin:10px auto; /* Center the button row */
-  width: fit-content;
-  max-width: calc(4 * var(--card-w) + 3 * 12px); /* Match cards width */
-  flex-wrap:wrap;
-}
-button{
-  padding:10px 12px; border:none; border-radius:8px;
-  cursor:pointer; font-weight:600; font-size:16px; min-width:80px;
-  transition: transform .06s ease, background-color .2s ease;
-}
-button:active { transform: translateY(1px); }
+/* =========================
+   5) MESSAGES
+   ========================= */
 
-/* Button colors from old_style.css */
+/* 5A) Generic message boxes (with background) */
+.message {
+  text-align: center;
+  margin: 8px auto;
+  padding: 6px 12px;
+  width: fit-content;
+  max-width: calc(4 * var(--card-w) + 3 * 12px);
+  border-radius: 8px;
+  background: #ecfdf5;
+  color: #065f46;
+  border: 1px solid #a7f3d0;
+  font-size: 15.5px; /* Keep original size */
+}
+
+/* 5B) Dynamic JavaScript messages (used by script.js) */
+#msg,
+.status {
+  font-size: 18px !important;
+  font-weight: 500 !important;
+  text-align: center !important;
+  width: 100% !important;
+  max-width: calc(4 * var(--card-w) + 3 * 12px) !important;
+  margin: 8px auto !important;
+  padding: 0 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  min-height: 30px !important;
+  color: #374151 !important;
+}
+
+/* Error states */
+.status-error {
+  color: var(--error) !important;
+  font-weight: 600 !important;
+}
+
+/* Success states */
+.status-success {
+  color: var(--success) !important;
+  font-weight: 600 !important;
+}
+
+/* 5C) Feedback icons (for answer box) */
+.answer-feedback .success-icon { color: var(--success); }
+.answer-feedback .error-icon { color: var(--error); }
+
+/* =========================
+   6) BUTTONS
+   ========================= */
+.button-row { 
+  display: flex; 
+  justify-content: center; 
+  gap: 8px; 
+  margin: 10px auto; 
+  width: var(--cards-width) !important; /* CHANGED: from fit-content to variable */
+  max-width: calc(4 * var(--card-w) + 3 * 12px); 
+  flex-wrap: wrap;
+  margin-left: auto !important;          /* ADDED */
+  margin-right: auto !important;         /* ADDED */
+}
+
+button { 
+  padding: 10px 12px; 
+  border: none; 
+  border-radius: 8px; 
+  cursor: pointer; 
+  font-weight: 600; 
+  font-size: 16px; 
+  min-width: 80px; 
+  transition: transform .06s ease, background-color .2s ease; 
+}
+
+button:active { 
+  transform: translateY(1px); 
+}
+
 .primary-btn{  background: var(--brand); color:#fff; }
 .success-btn{  background: var(--success); color:#fff; }
 .info-btn{     background: var(--info);    color:#fff; }
 .warning-btn{  background: var(--warning); color:#000; }
 .danger-btn{   background: var(--error);   color:#fff; }
 .secondary-btn{background:#78909c;         color:#fff; }
-.clear-btn{    background: var(--warning); color:#000; }
+.clear-btn{    background:#e5e7eb;         color:#111; }
 
-/* Specific button IDs with colors */
 #deal       { background: var(--act-secondary); color:#0b3a20; font-weight:700; }
 #check      { background: var(--act-primary);   color:#09243a; font-weight:700; }
-#nosolution { background: var(--act-accent);    color:#3a2a09; font-weight:700; } 
+#nosolution { background: var(--act-accent);    color:#3a2a09; font-weight:700; }
 #restart    { background: var(--act-danger);    color:#3a0f1b; font-weight:700; }
 #exit       { background: #cbd5e1;              color:#111;    font-weight:700; }
-/*#help, #helpAll { background: var(--act-primary); color:#09243a; font-weight:700; }*/
 #clear, #back { background:#e5e7eb; color:#111; font-weight:700; }
 
-/*overrid button */
-#check, #next {
-  background: var(--stern-purple);
-  color: white;
-  font-weight:700;
+/* Actions: make every button the same neutral look */
+.primary-btn, .success-btn, .info-btn, .warning-btn,
+.danger-btn, .secondary-btn, .clear-btn,
+#deal, #check, #nosolution, #restart, #exit, #clear, #back,
+#next, #no, #restart, #help, #helpAll {
+  /*background: var(--neutral-600) !important;*/
+  background: var(--4background) !important;
+  color: #fff !important;
+  border: none !important;
+  box-shadow: 0 2px 6px rgba(0,0,0,.12) !important;
 }
-/*
-#no, #restart {
-  background: var(--error);
-  color: white;
-  font-weight:700;
-}*/
+button:hover{ filter: brightness(1.05); }
+button:active{ transform: translateY(1px); }
 
+/* =========================
+   7) TABS & MODALS (minimal)
+   ========================= */
+.tabs{ display:flex; gap:8px; border-bottom:2px solid var(--brand); margin:16px auto; width:fit-content; max-width: calc(4 * var(--card-w) + 3 * 12px); }
+.tab-link{ padding:8px 16px; background:none; border:none; cursor:pointer; color:#555; font-weight:600; border-bottom:3px solid transparent; transition: all .2s ease; }
+.tab-link.active{ color:var(--brand); border-bottom-color:var(--brand); }
+.tab-link:hover{ color:var(--brand); }
+.tab-content{ display:none; line-height:1.6; }
+.tab-content.active{ display:block; }
 
-#exit {
-  background: #cbd5e1;
-  color:#111;
-  font-weight:700;
+.modal-backdrop{
+  position:fixed; inset:0; background:rgba(0,0,0,.65);
+  display:none; align-items:center; justify-content:center; z-index:10000; opacity:0; transition: opacity .2s ease-in-out;
 }
-/* ==================================================================
-   5) SETTINGS / INPUTS - FIXED width for all difficulty levels
-   ================================================================== */
-/* Settings from old_style.css - FIXED positioning and width */
-.settings-container {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+.modal{
+  background:#fff; max-width:90vw; width:650px; max-height:80vh; overflow-y:auto; border-radius:12px; padding:20px;
+  box-shadow: 0 25px 50px -12px rgba(0,0,0,.25); z-index:10001; transform: translateY(-20px); transition: transform .2s ease-in-out;
+}
+.modal-backdrop[style*="display: flex"]{ display:flex !important; opacity:1; }
+.modal-backdrop[style*="display: flex"] .modal{ transform: translateY(0); }
+.modal-head{ display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; }
+.modal-head h3{ margin:0; color:var(--text); }
+.close{ background:none; border:none; font-size:24px; cursor:pointer; color:var(--muted); }
+.close:hover{ color:var(--error); }
+
+/* =========================
+   8) RESPONSIVE (mobile game)
+   ========================= */
+@media (max-width: 820px){
+  :root{
+    --board-max: calc(100vw - 48px); /* page padding */
+  }
+}
+@media (max-width: 600px){
+  :root{
+    --card-w: 100px;
+    --card-h: 140px;
+    --op-btn-h: 48px;
+  }
 }
 
-details.settings{
+/* =========================
+   Stats 
+   ========================= */
+.stats{
+  display:flex; justify-content:center; gap:14px; flex-wrap:wrap;
+  color:#777; font-size:.95rem; margin-top:12px; width:100%;
+}
+.stats span{ min-width:100px; display:inline-block; }
+
+/* =========================
+   ANSWER BOX & FEEDBACK
+   ========================= */
+.answer-container {
   position: relative;
-}
-details.settings summary{
-  cursor:pointer;
-  color:#555;
-  list-style: none;
-  padding: 6px 10px;
-  border-radius: 6px;
-  transition: background-color 0.2s;
-  white-space: nowrap;
-}
-details.settings summary:hover {
-  background: #f3f4f6;
-}
-details.settings summary::-webkit-details-marker {
-  display: none;
+  margin: 8px auto 16px;
+  width: var(--cards-width) !important; /* Use the variable */
+  max-width: calc(4 * var(--card-w) + 3 * 12px);
+  margin-left: auto !important;
+  margin-right: auto !important;
 }
 
-/* SIMPLE SETTINGS (when difficulty is not custom/competition) */
-details.settings[open]:not(.complex-settings) {
-  position: absolute;
-  top: 100%;
-  right: 0;
-  background:#fff;
-  border-radius:8px;
-  padding:16px;
-  box-shadow:0 8px 25px rgba(0,0,0,.15);
-  border: 1px solid #e5e7eb;
-  z-index: 1000;
-  min-width: 320px; /* Wider for simple settings */
-  margin-top: 8px;
+.answer-box {
+  width: 100%; /* Use 100% of container instead of recalculating */
+  padding: 12px 40px 12px 12px;
+  font-size: 1.05rem;
+  border: 2px solid #e5e7eb;
+  border-radius: 10px;
+  box-sizing: border-box;
+  transition: border-color .2s ease, box-shadow .2s ease;
 }
 
-/* COMPLEX SETTINGS (when difficulty is custom/competition) */
-details.settings[open].complex-settings {
-  position: absolute;
-  top: 100%;
-  right: 0;
-  background:#fff;
-  border-radius:8px;
-  padding:16px;
-  box-shadow:0 8px 25px rgba(0,0,0,.15);
-  border: 1px solid #e5e7eb;
-  z-index: 1000;
-  min-width: 320px; /* Even wider for complex settings */
-  margin-top: 8px;
-}
-
-.settings-row{
-  display:flex;
-  gap:12px;
-  align-items:center;
-  margin-top:6px;
-  width: 100%;
-}
-.settings-row select {
-  flex: 1;
-  min-width: 250px; /* Ensure selects are wide enough */
-}
-.link{ color:#0a58ca; text-decoration: underline; cursor:pointer; }
-
-select, input[type="text"], input[type="number"]{
-  padding:8px 10px; border:2px solid #e5e7eb; border-radius:10px; background:#fff; color:#111;
-  font-size:14px; transition:border-color .2s ease, box-shadow .2s ease;
-}
-select:focus, input:focus{ outline:none; border-color:var(--brand); box-shadow: var(--ring); }
-
-.save-pool-btn{ align-self:center; }
-.duration-input{ width:72px; text-align:center; }
-
-/* ==================================================================
-   6) ANSWER BOX & RESPONSE AREA - IMPROVED WITH "READY" MESSAGE MOVED
-   ================================================================== */
-.answer-container{
-  position: relative;
-  margin: 8px 0 16px; /* Reduced top margin since response area is above */
-  width: 100%;
-  max-width: calc(4 * var(--card-w) + 3 * 12px); /* Match cards width */
-  margin-left: auto;
-  margin-right: auto; /* CENTER the answer box */
-}
-
-/* Response message area - IMPROVED with centered text and larger font */
-.response-area {
-  min-height: 50px; /* Increased height */
-  display: flex;
-  align-items: center; /* VERTICALLY CENTER the text */
-  justify-content: center;
-  margin: 12px 0 8px; /* Better spacing */
-  font-size: 18px; /* LARGER font for response messages */
-  text-align: center;
-  width: 100%;
-  max-width: calc(4 * var(--card-w) + 3 * 12px); /* Match cards width */
-  margin-left: auto;
-  margin-right: auto;
-}
-
-/* "Ready — press Deal to start" message styling */
-.ready-message {
-  color: #374151; /* ORIGINAL COLOR */
-  font-weight: 500;
-  font-size: 18px; /* LARGER font */
-  margin: 0;
-  text-align: center;
-  width: 100%;
-}
-
-/* Answer box - CLEAN without placeholder text */
-.answer-box{
-  width:100%;
-  padding: 16px 50px 16px 16px; /* Increased padding for taller box */
-  font-size: 1.15rem; /* Good base font size */
-  border:2px solid #e5e7eb;
-  border-radius:12px;
-  box-sizing:border-box;
-  transition: all .2s ease;
-  background: #ffffff; /* White background since no placeholder */
-  color: #1a1a1a; /* Dark text for user input */
-  height: 60px; /* Fixed height for consistency */
-  font-weight: 500;
-}
-
-/* Active state (when user is typing) - LARGER FONT */
 .answer-box:focus {
-  font-size: 1.25rem; /* LARGER font when focused */
+  outline: none;
   border-color: var(--brand);
   box-shadow: 0 0 0 3px rgba(46,125,50,.12);
-  outline: none;
 }
 
-.answer-feedback{
-  position:absolute;
-  right:16px;
-  top:50%;
-  transform:translateY(-50%);
-  font-size:1.4rem; /* Larger feedback icons */
+.answer-feedback {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 1.2rem;
 }
 
-.success-icon{ color:var(--success); }
-.error-icon{ color:var(--error); }
+.success-icon { color: var(--success); }
+.error-icon { color: var(--error); }
 
-/* Messages - LARGER FONT for all messages */
-#msg, .msg {
-  font-size: 18px; /* LARGER font */
-  color: #374151;
-  font-weight: 500;
-  margin: 0;
-  text-align: center;
-  width: 100%;
-  display: flex;
-  align-items: center; /* Vertically center */
-  justify-content: center;
-  min-height: 30px; /* Ensure proper height */
-}
-.msg-success { color: var(--success); font-weight: 600; }
-.msg-error   { color: var(--error);   font-weight: 600; }
-
-.status{
-  text-align:center;
-  font-weight:600;
-  min-height:32px;
-  margin:12px 0;
-  color:var(--error);
-  font-size: 18px; /* Larger font */
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.status-success{ color: var(--success); }
-.status-error{   color: var(--error); }
-
-/* ==================================================================
-   7) MODALS (Summary / Confirm) - FIXED centering and ? modal
-   ================================================================== */
-.modal-backdrop{
-  position:fixed;
-  inset:0;
-  display:none;
-  align-items:center;
-  justify-content:center;
-  background: rgba(0,0,0,.65);
-  opacity:0;
-  transition: opacity .2s ease;
-  z-index:var(--z-modal);
-  padding: 16px;
-}
-.modal-backdrop.modal-visible{
-  display:flex !important;
-  opacity:1;
-}
-
-.modal{
-  background: #fff;
-  width: min(650px, 90vw);
-  max-height: 80vh;
-  overflow-y: auto;
-  border-radius: 12px;
-  padding: 20px;
-  box-shadow: 0 25px 50px -12px rgba(0,0,0,.25);
-  z-index: var(--z-modal-content);
-  transform: translateY(-20px);
-  transition: transform .2s ease-in-out;
-  position: relative;
-  margin: 0 auto;
-}
-
-.modal-backdrop.modal-visible .modal {
-  transform: translateY(0);
-}
-
-.modal-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 16px;
-}
-
-.modal-head h3 {
-  margin: 0;
-  color: var(--text);
-}
-
-.close {
-  background: none;
-  border: none;
-  font-size: 24px;
-  cursor: pointer;
-  color: var(--muted);
-}
-
-.close:hover {
-  color: var(--error);
-}
-
-.modal-buttons {
-  display: flex;
-  justify-content: flex-end;
-  gap: 10px;
-  margin-top: 20px;
-}
-
-/* Confirm modal - FIXED centering */
-.confirm-backdrop {
-  display: none;
-  position: fixed;
-  inset: 0;
-  background: rgba(0,0,0,.65);
-  align-items: center;
-  justify-content: center;
-  z-index: 1001;
-  padding: 16px;
-}
-
-.confirm-backdrop.modal-visible {
-  display: flex !important;
-}
-
-.confirm-backdrop > div {
-  background: #fff;
-  width: min(520px, 95vw);
-  border-radius: 12px;
-  padding: 20px;
-  box-shadow: 0 25px 50px -12px rgba(0,0,0,.25);
-  margin: 0 auto;
-}
-
-/* ==================================================================
-   8) ? MODAL - COMPREHENSIVE FIX for all common modal IDs
-   ================================================================== */
-/* Target ALL common modal IDs for the ? button */
-#howToModal,
-#howToBackdrop,
-#helpModal,
-#instructionsModal {
-  position: fixed;
-  inset: 0;
-  display: none;
-  align-items: center;
-  justify-content: center;
-  background: rgba(0,0,0,.65);
-  opacity: 0;
-  transition: opacity .2s ease;
-  z-index: var(--z-modal);
-  padding: 16px;
-}
-
-#howToModal.modal-visible,
-#howToBackdrop.modal-visible,
-#helpModal.modal-visible,
-#instructionsModal.modal-visible {
-  display: flex !important;
-  opacity: 1;
-}
-
-#howToModal .modal,
-#howToBackdrop .modal,
-#helpModal .modal,
-#instructionsModal .modal {
-  width: min(720px, 92vw);
-  background: var(--panel);
-  color: var(--text);
-  border-radius: 14px;
-  box-shadow: var(--shadow);
-  padding: 18px;
-  z-index: var(--z-modal-content);
-  transform: translateY(-20px);
-  transition: transform .2s ease-in-out;
-}
-
-#howToModal.modal-visible .modal,
-#howToBackdrop.modal-visible .modal,
-#helpModal.modal-visible .modal,
-#instructionsModal.modal-visible .modal {
-  transform: translateY(0);
+/* Button row alignment (keep this separate) */
+.button-row {
+  width: var(--cards-width) !important;
+  margin-left: auto !important;
+  margin-right: auto !important;
 }
 
 /* ==================================================================
@@ -701,7 +439,7 @@ select:focus, input:focus{ outline:none; border-color:var(--brand); box-shadow: 
 
 .solution-grid{
   display:grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px,1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap:6px;
   margin-top:8px;
 }
@@ -739,571 +477,3 @@ select:focus, input:focus{ outline:none; border-color:var(--brand); box-shadow: 
 .help-line:last-child,
 .sol-line:last-child { border-bottom: 0; }
 
-/* ==================================================================
-   10) UTILITIES & MISC
-   ================================================================== */
-.center{ display:flex; align-items:center; justify-content:center; }
-.right{ margin-left:auto; }
-.sr-only{ position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
-
-/* CSP classes from old_style.css */
-.hidden { display: none !important; }
-.visible-block { display: block !important; }
-.visible-flex { display: flex !important; }
-.visible-inline { display: inline !important; }
-.visible-inline-block { display: inline-block !important; }
-.cursor-pointer { cursor: pointer; }
-
-.target-custom-hidden { display: none; width: 6rem; }
-.apply-target-hidden { display: none; }
-.target-custom-visible { display: inline-block; width: 6rem; }
-.apply-target-visible { display: inline-block; }
-
-.case-pool-hidden { display: none; }
-.case-pool-visible { display: flex; }
-.block-label { display: block; }
-.grid-layout { display: grid; grid-template-columns: minmax(260px, 1fr) auto auto; gap: 8px; align-items: center; }
-.nowrap-label { white-space: nowrap; }
-
-/* Tabs from old_style.css */
-.tabs{ display:flex; gap:8px; border-bottom:2px solid var(--brand); margin-bottom:16px; }
-.tab-link{ padding:8px 16px; background:none; border:none; cursor:pointer; font-weight:600; color:var(--muted); border-bottom:3px solid transparent; transition: all .2s ease; }
-.tab-link.active{ color:var(--brand); border-bottom-color:var(--brand); }
-.tab-link:hover{ color:var(--brand); }
-.tab-content{ display:none; line-height:1.6; }
-.tab-content.active{ display:block; }
-
-/* Alert from old_style.css */
-.alert {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: .75rem;
-  padding: .75rem 1rem;
-  border-radius: .5rem;
-  margin: 1rem;
-  box-shadow: 0 2px 10px rgba(0,0,0,.08);
-  border: 1px solid transparent;
-}
-.alert.info { background: #eef6ff; border-color: #cfe6ff; }
-.alert .alert-close {
-  border: 0;
-  background: transparent;
-  font-size: 1.25rem;
-  line-height: 1;
-  cursor: pointer;
-}
-
-/* Confetti */
-.confetti-bit {
-  position: fixed; width: 8px; height: 8px; background: hsl(var(--h,0) 90% 60%);
-  border-radius: 2px; pointer-events: none; animation: confetti-fall 1s ease-out forwards;
-}
-@keyframes confetti-fall {
-  to { transform: translateY(50vh) rotate(720deg); opacity: 0; }
-}
-
-/* ==================================================================
-   11) TOP-RIGHT TOOLS - FIXED positioning
-   ================================================================== */
-
-/* Settings button styling */
-.settings-toggle {
-  background: none;
-  border: none;
-  cursor: pointer;
-  color: var(--muted);
-  font-size: 18px;
-  padding: 6px 10px;
-  border-radius: 6px;
-  transition: background-color 0.2s;
-  white-space: nowrap;
-}
-
-.settings-toggle:hover {
-  background: #f3f4f6;
-}
-
-/* How-to button styling - FIXED for all common IDs */
-#howToBtn,
-[data-howto-btn],
-.help-btn {
-  background: none;
-  border: none;
-  cursor: pointer;
-  color: var(--muted);
-  font-size: 18px;
-  padding: 6px 10px;
-  border-radius: 6px;
-  transition: background-color 0.2s;
-  font-weight: bold;
-  white-space: nowrap;
-}
-
-#howToBtn:hover,
-[data-howto-btn]:hover,
-.help-btn:hover {
-  background: #f3f4f6;
-}
-
-/* ==================================================================
-   12) RESPONSIVE
-   ================================================================== */
-@media (max-width: 1024px){
-  .grid-layout{ grid-template-columns: 1fr 280px; }
-}
-
-@media (max-width: 960px){
-  :root{
-    --max-w: 95vw;
-    --page-w: 95vw;
-  }
-}
-
-@media (max-width: 860px){
-  .grid-layout{ grid-template-columns:1fr; gap:12px; }
-  .game-header{ flex-direction:column; align-items:flex-start; }
-}
-
-/* Mobile tweaks */
-@media (max-width:720px){
-  :root{
-    --card-w: 100px;     /* Slightly smaller but maintain ratio */
-    --card-h: 140px;     /* Maintains 5:7 ratio */
-    --op-btn-h: 48px;
-    --max-w: 94vw;
-    --page-w: 94vw;
-  }
-
-  .container{ padding:12px; }
-
-  .cards{
-    grid-template-columns: repeat(2, var(--card-w));
-    justify-content: center;
-  }
-
-  .button-row{ gap:6px; }
-  button{ padding:8px 10px; font-size:14px; min-width:70px; }
-
-  .ops-wrap button{ font-size:20px; padding:0 10px; }
-  .ops-wrap button[data-op="+"]{ font-size:24px; }
-  .ops-wrap button[data-op="-"]{ font-size:28px; }
-
-  .settings-row{ flex-direction:column; align-items:flex-start; gap:8px; }
-  .grid-layout{ grid-template-columns:1fr !important; gap:8px !important; }
-
-  .save-pool-btn{ justify-self: start; }
-  .duration-input{ width:60px; margin-left:4px; }
-
-  .modal{ max-width: 95vw; padding: 16px; }
-  .confirm-backdrop > div { width: 95vw; }
-
-  /* Adjust top-right tools for mobile */
-  .topline {
-    flex-direction: column;
-    gap: 8px;
-    align-items: flex-start;
-  }
-
-  .right-tools {
-    width: 100%;
-    justify-content: space-between;
-  }
-
-  /* Fix settings dropdown on mobile */
-  details.settings[open] {
-    position: fixed;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    width: 90vw;
-    max-width: 300px;
-  }
-
-  /* Stack timer, settings, ? vertically on mobile */
-  .right-tools {
-    flex-direction: column;
-    gap: 8px;
-  }
-
-  /* Adjust answer box for mobile */
-  .answer-box {
-    font-size: 1.1rem;
-    padding: 14px 40px 14px 14px;
-    height: 55px;
-  }
-
-  .answer-box:focus {
-    font-size: 1.2rem;
-  }
-
-  .response-area {
-    min-height: 40px;
-    font-size: 16px;
-  }
-
-  #msg, .msg {
-    font-size: 16px;
-  }
-
-  .ready-message {
-    font-size: 16px;
-  }
-}
-/* --- Place '?' neatly beside Settings (top-right tools) --- */
-.right-tools .link#howtoLink{
-  display:inline-flex; align-items:center; justify-content:center;
-  height:32px; min-width:32px; padding:0 10px;
-  border-radius:8px; font-weight:700; color:var(--muted);
-  border:1px solid #e5e7eb; background:#fff; text-decoration:none;
-}
-.right-tools .link#howtoLink:hover{ background:#f3f4f6; color:#111; }
-
-/* --- Harden '?' modal centering/z-index regardless of how it’s shown --- */
-#modalBackdrop{
-  position:fixed !important; inset:0 !important;
-  display:none; align-items:center; justify-content:center;
-  background:rgba(0,0,0,.65); z-index:var(--z-modal) !important;
-}
-#modalBackdrop[style*="display: flex"]{ /* when JS toggles display:flex */
-  display:flex !important;
-}
-#modalBackdrop .modal{
-  max-width:min(720px,92vw); width:100%;
-  transform:none; margin:0 auto;
-}
-/* --- Make backend feedback and ready text pop a bit more --- */
-#msg.status{ font-size:20px; }
-.answer-feedback{ font-size:1.6rem; }
-.ready-message{ font-size:20px; }
-/* --- Force a pleasant 3/2/1 column grid for Help All --- */
-.solution-grid{ grid-template-columns:repeat(3, minmax(0,1fr)); }
-@media (max-width: 920px){ .solution-grid{ grid-template-columns:repeat(2, minmax(0,1fr)); } }
-@media (max-width: 560px){ .solution-grid{ grid-template-columns:1fr; } }
-
-/* --- Unify Help / Help All visual weight --- */
-#help, #helpAll{
-  background:var(--act-primary); color:#09243a; font-weight:700;
-}
-/* Subtle hover for all primary controls */
-.button-row button:hover{ filter:brightness(1.03); }
-
-/* Settings popover — match panel look */
-.panel details.settings[open]:not(.complex-settings),
-.panel details.settings[open].complex-settings {
-  background: var(--panel);
-  border-radius: var(--r-md);
-  box-shadow: var(--shadow);
-  border: none;
-  padding: 16px;
-}
-
-/* Make the "Settings" summary look like a subtle chip button */
-details.settings summary {
-  background: transparent;
-  border: 2px solid #e5e7eb;
-  border-radius: 9999px;
-  padding: 6px 12px;
-  color: var(--text);
-}
-details.settings summary:hover {
-  background: #f3f4f6;
-}
-/* Confirm (Restart) modal – bump readable sizes */
-#confirmBackdrop { 
-  font-size: clamp(16px, 1.8vw, 18px); /* base text */
-  line-height: 1.5;
-}
-#confirmBackdrop h3,
-#confirmBackdrop .title {
-  font-size: clamp(18px, 2vw, 20px);
-  font-weight: 700;
-  margin-bottom: 8px;
-}
-#confirmBackdrop p { 
-  font-size: clamp(16px, 1.8vw, 18px);
-  margin: 8px 0 16px;
-}
-#confirmBackdrop .confirm-actions button {
-  font-size: 16px;
-}
-/* Poker card sizing */
-:root {
-  --card-w: 132px;                 /* tweak this to taste (width) */
-}
-
-/* If cards are <img class="card"> */
-img.card {
-  width: var(--card-w);
-  aspect-ratio: 5 / 7;
-  height: auto;                    /* aspect-ratio controls height */
-  object-fit: cover;
-}
-
-/* If cards are <div class="card"> backgrounds */
-div.card {
-  width: var(--card-w);
-  aspect-ratio: 5 / 7;
-}
-/* Print: true-to-size */
-@media print {
-  img.card, div.card {
-    width: 2.5in;
-    height: 3.5in;
-  }
-}
-/* Cards: show the PNG’s own corners; no extra rounding */
-img.card {
-  width: var(--card-w);
-  aspect-ratio: 5 / 7;
-  height: auto;
-  object-fit: contain;
-  object-position: center;
-  background: transparent;
-  padding: 0;
-  border-radius: 0;     /* <- important */
-  box-shadow: var(--shadow);
-  display: block;
-}
-/* Make sure parents don't clip the image */
-.cards,
-.card-slot {
-  overflow: visible;
-}
-/* NYU Stern-inspired palette */
-body {
-    background: #f8f9fa; /* Light neutral background */
-    min-height: 100vh;
-    margin: 0;
-    padding: 0;
-}
-
-.wrap {
-    background: white;
-    border-radius: 8px;
-    box-shadow: 0 2px 12px rgba(75, 40, 109, 0.1);
-    margin: 20px auto;
-    padding: 20px;
-    max-width: 1200px;
-}
-
-/* Use Stern's purple for accents */
-.game-header {
-    background: #4B286D; /* NYU Stern purple */
-    color: white;
-    padding: 20px;
-    border-radius: 8px;
-    margin-bottom: 20px;
-}
-
-.primary-btn {
-    background: #4B286D;
-    color: white;
-}
-
-.primary-btn:hover {
-    background: #3a1f55; /* Darker purple */
-}
-
-.primary-btn, .success-btn, .info-btn {
-    background: #4B286D; /* NYU Stern purple */
-    color: white;
-    border: none;
-}
-
-.primary-btn:hover, .success-btn:hover, .info-btn:hover {
-    background: #3a1f55; /* Darker purple */
-}
-/*op1 match NYU for action button*/
-.primary-btn, .success-btn, .info-btn {
-    background: #4B286D; /* NYU Stern purple */
-    color: white;
-    border: none;
-}
-
-.primary-btn:hover, .success-btn:hover, .info-btn:hover {
-    background: #3a1f55; /* Darker purple */
-}
-/*op3 match NYU for action button*/
-.primary-btn { background: #4B286D; } /* Dark purple */
-.success-btn { background: #7B1FA2; } /* Medium purple */
-.danger-btn { background: #C2185B; } /* Purple-pink */
-.info-btn { background: #512DA8; } /* Deep purple */
-
-/*op2 match NYU for action button*/
-/* Keep purple for primary actions */
-.primary-btn {
-    background: #4B286D;
-    color: white;
-}
-
-/* Use complementary colors for other actions */
-.success-btn { /* Check button */
-    background: #2E7D32; /* Calm green */
-    color: white;
-}
-
-.danger-btn { /* No Solution, Restart */
-    background: #C62828; /* Alert red */
-    color: white;
-}
-
-.info-btn { /* Help buttons */
-    background: #0277BD; /* Trust blue */
-    color: white;
-}
-/*action button*/
-#check, #next, #help, #helpAll {
-  background: var(--stern-purple);
-  color: white;
-  font-weight:700;
-}
-
-#clear, #backspace {
-  background:#e5e7eb;
-  color:#111;
-  font-weight:700;
-}
-
-#no, #restart {
-  background: var(--error);
-  color: white;
-  font-weight:700;
-}
-
-#exit {
-  background: #cbd5e1;
-  color:#111;
-  font-weight:700;
-}
-/* PERMANENT FIX - Force help buttons to light gray */
-#clear, #backspace , #nosolution , #restart , #help , #helpAll , #no {
-  background:#e5e7eb;
-  color:#111;
-  font-weight:700;
-}
-/* HARD CODE ALL OPERATORS TO STERN PURPLE */
-.ops-wrap button[data-op] {
-  background: #4B286D !important;
-  color: white !important;
-}
-/* HARD CODE ALL OPERATORS TO LIGHT GRAY */
-.ops-wrap button[data-op] {
-  background: #e5e7eb !important;
-  color: #111 !important;
-}
-/* Avoid "double panel" when embedded inside the site's main layout */
-.main-content .wrap > .panel {
-  background: transparent;
-  box-shadow: none;
-  padding: 0;
-}
-
-/* keep a little spacing so content doesn't hug the edges */
-.main-content .wrap { padding: 0 0 8px; }
-
-/* if your operator/solutions mini-panels should still float, keep their shadow */
-.main-content .wrap .op-panel,
-.main-content .wrap .solutions-panel,
-.main-content .wrap .help-panel {
-  background: var(--panel);
-  box-shadow: var(--shadow);
-}
-/*final polish*/
-/* Settings: subtle chip + matching open panel */
-details.settings summary {
-  border: 1px solid var(--divider);
-  border-radius: 9999px;
-  padding: 6px 12px;
-  background: transparent;
-  color: var(--text);
-  outline: none;
-}
-details.settings summary:hover { background: #f3f4f6; }
-details.settings summary:focus-visible {
-  outline: none;
-  box-shadow: 0 0 0 3px color-mix(in oklab, var(--brand) 20%, transparent);
-}
-
-details.settings[open] {
-  background: var(--panel);
-  border: 1px solid var(--divider);
-  border-radius: var(--r-md);
-  box-shadow: var(--shadow);
-  padding: 16px;
-}
-
-/* Buttons hierarchy */
-.btn, button { border-radius: 10px; }
-
-button#deal {
-  background: var(--act-primary);
-  color: white;
-  border: none;
-}
-button#deal:hover { filter: brightness(0.95); }
-
-.actions-row button:not(#deal) {
-  background: white;
-  color: var(--text);
-  border: 1px solid var(--divider);
-}
-.actions-row button:not(#deal):hover { background: #f8fafc; }
-
-/* Operator strip */
-.ops { gap: 10px; }
-.ops button {
-  width: 40px; height: 40px;
-  border: 1px solid var(--divider);
-  background: white;
-}
-.ops button:hover { background:#f9fafb; }
-.ops button:active { transform: translateY(1px); }
-button[data-op="^"], .op[data-op="^"] { color:#111 !important; text-shadow:none !important; }
-
-/* Messages */
-.status { background: var(--panel); border: 1px solid var(--divider); }
-.status-success { background: #ecfdf5; border-color: #bbf7d0; }
-.status-error   { background: #fef2f2; border-color: #fecaca; }
-
-/* Solution/help areas (adjust selectors to yours if needed) */
-.solutions-panel, .help-panel {
-  background: var(--panel);
-  border: 1px solid var(--divider);
-  border-radius: var(--r-md);
-}
-
-/* Final card style — use the PNG's own edges/corners */
-img.card {
-  width: var(--card-w);
-  aspect-ratio: 5 / 7;
-  height: auto;
-  object-fit: contain;
-  object-position: center;
-  background: transparent;
-  padding: 0;
-  border-radius: 0;
-  box-shadow: var(--shadow);
-  display: block;
-}
-
-.title-panel { margin-bottom: 18px; }
-.ops { margin-top: 14px; }
-#msg { margin-top: 10px; margin-bottom: 12px; }
-.stats-row { margin-top: 10px; }
-
-/*more tounch*/
-.btn:focus-visible, button:focus-visible, a:focus-visible {
-  outline: none;
-  box-shadow: 0 0 0 3px color-mix(in oklab, var(--brand) 25%, transparent);
-}
-
-@media (max-width: 640px) {
-  .panel { padding: 14px; }
-  .ops { gap: 8px; margin-top: 10px; }
-  #msg { margin: 8px 0 10px; }
-}
-@media (prefers-reduced-motion: reduce) {
-  * { transition: none !important; animation: none !important; }
-}
-img.card { image-rendering: -webkit-optimize-contrast; }
