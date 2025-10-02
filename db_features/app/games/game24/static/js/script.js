@@ -121,6 +121,13 @@
   el.howToClose = document.getElementById('modalClose') ||
     document.querySelector('#modalBackdrop .close, #howToBackdrop .modal-close, [data-howto-close]');
 
+  // fix restart display issue
+  // RESTART modal elements (use the modal you already have in play.html)
+  const restartModal    = document.getElementById('restartModal');
+  const restartConfirm  = document.getElementById('restartConfirm');
+  const restartCancel   = document.getElementById('restartCancel');
+  const restartClose    = document.getElementById('restartClose');
+
   /* =========================
      Modal helpers
   ========================= */
@@ -1282,12 +1289,26 @@
     on(el.restart, 'click', (e) => {
       e.preventDefault();
       cancelNextDeal();
-      openConfirm({
-        title: 'Restart?',
-        msg: 'This will reset counters and start a new session.',
-        onOK: () => { doRestart(); }
-      });
+    
+      // Prefer the dedicated Restart modal if it exists
+      if (restartModal) {
+        const close = () => hideModal(restartModal);
+    
+        // Bind once per open
+        restartConfirm?.addEventListener('click', () => { close(); doRestart(); }, { once: true });
+        restartCancel?.addEventListener('click', close, { once: true });
+        restartClose?.addEventListener('click',  close, { once: true });
+    
+        showModal(restartModal);
+        return;
+      }
+    
+      // Fallback: inline confirm if the modal is unavailable
+      if (confirm('Restart? This will reset counters and start a new session.')) {
+        doRestart();
+      }
     });
+
 
     // Exit now opens Summary first
     on(el.exit, 'click', (e) => {
