@@ -499,40 +499,33 @@ button:active{ transform: translateY(1px); }
   border-radius: 12px;
   padding: 14px 8px;
   margin: 16px auto 8px;
-  width: 100%;
+  width: var(--cards-width) !important;
   max-width: calc(4 * var(--card-w) + 3 * 12px);
 }
 
 .num-wrap {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  display: flex;
+  justify-content: center;
   gap: 8px;
-  max-width: 500px;
+  flex-wrap: nowrap; /* Ensure single line */
+  max-width: 100%;
   margin: 0 auto;
 }
 
 .num-wrap button {
-  min-height: var(--op-btn-h);
+  min-width: var(--op-btn-h);
+  height: var(--op-btn-h);
+  padding: 0 12px;
   border: none;
   border-radius: 10px;
   cursor: pointer;
-  font-weight: 600;
-  font-size: 1.2rem;
+  font-weight: 800;
+  font-size: 24px;
   line-height: 1;
   color: #111;
   background: var(--op-green);
   transition: all 0.1s ease;
-}
-
-/* Special styling for action buttons in numpad */
-.num-wrap button[data-act] {
-  font-size: 1rem;
-  font-weight: 700;
-}
-
-/* Span the 0 button across two columns */
-.num-wrap button[data-num="0"] {
-  grid-column: span 2;
+  flex-shrink: 0; /* Prevent buttons from shrinking */
 }
 
 .num-wrap button:hover {
@@ -542,3 +535,88 @@ button:active{ transform: translateY(1px); }
 .num-wrap button:active {
   transform: translateY(1px);
 }
+
+/* Responsive: smaller gap on mobile */
+@media (max-width: 600px) {
+  .num-wrap {
+    gap: 6px;
+  }
+  .num-wrap button {
+    min-width: calc(var(--op-btn-h) - 8px);
+    height: calc(var(--op-btn-h) - 8px);
+    font-size: 20px;
+    padding: 0 8px;
+  }
+}
+
+/*==== force to cards width ====*/
+.answer-container,
+.num-panel,
+.button-row {
+  width: 640px !important;
+  max-width: 640px !important;
+  margin: 16px auto 8px !important;
+}
+.case-id:hover {
+  background: #007bff !important;
+  color: white !important;
+  border-color: #007bff !important;
+}
+
+.modal {
+  max-width: 600px;
+}
+
+.actions {
+  flex-wrap: wrap;
+}
+
+.actions button {
+  margin: 2px;
+}
+.answer-feedback .big-check {
+  font-size: 1.6rem;
+  line-height: 1;
+  vertical-align: middle;
+}
+.hint-inline {
+  opacity: .75;
+  margin-left: .5rem;
+  font-style: italic;
+}
+#eduFormula { display: none !important; }
+.formula-inline { font-weight: 600; margin-left: .5rem; }
+.hint-inline { opacity: .75; margin-left: .5rem; font-style: italic; }
+
+/* Backdrop covers everything */
+#poolCompletionBackdrop.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  display: none;           /* shown via JS => flex */
+  align-items: center;
+  justify-content: center;
+  background: rgba(0,0,0,.5);
+  z-index: 9999;           /* above header/toolbars */
+  opacity: 0;              /* JS sets to 1 when showing */
+  transition: opacity .15s ease;
+}
+
+/* Modal box */
+#poolCompletionBox.modal-box {
+  display: none;           /* JS sets to block */
+  background: #fff;
+  color: #111;
+  border-radius: 12px;
+  width: min(680px, 92vw);
+  max-height: 80vh;
+  overflow: auto;
+  padding: 16px 18px;
+  box-shadow: 0 10px 30px rgba(0,0,0,.35);
+  z-index: 10000;          /* above backdrop */
+}
+
+/* Avoid page scrolling when modal open */
+body.modal-open {
+  overflow: hidden;
+}
+
