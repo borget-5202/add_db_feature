@@ -1,50 +1,314 @@
-<!-- app/games/sum_4_cards/templates/sum_4_cards/sum4_play.html -->
-<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <title>{{ game.title or 'Sum 4 Cards' }}</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <!-- Shared CSS (adjust path if your static root differs) -->
-  <link rel="stylesheet" href="{{ url_for('static', filename='game/assets/css/style.css') }}">
+{% extends "base.html" %}
+
+{% block content %}
+  <link rel="stylesheet" href="{{ url_for('games_assets_bp.static', filename='css/style.css') }}">
   <style>
-    /* Tiny defaults in case shared CSS differs */
-    .table { display:flex; gap:12px; justify-content:center; margin: 24px 0; }
-    .card {
-      width: 90px; height: 130px; border-radius: 10px; border: 2px solid #222;
-      display:flex; align-items:center; justify-content:center; font-size: 32px;
-      background: #fff;
-    }
-    .card.face-down { background: #0a4; color: transparent; position: relative; }
-    .card.face-down::after { content: "🂠"; color: #fff; font-size: 28px; }
-    .controls { display:flex; gap:10px; justify-content:center; align-items:center; margin-top: 16px; }
-    .title { text-align:center; margin-top:16px; font-weight: 600; font-size: 24px; }
-    .hidden { display:none; }
+    .sum4-wrapper { max-width: var(--max-w); margin: 0 auto; padding: 20px; }
+    #solutionPanel.sum4-solution { max-width: 500px; margin: 16px auto; }
+    .debug-panel { background:#f5f5f5; border:1px solid #ddd; padding:10px; margin:10px 0; border-radius:4px; font-family:monospace; font-size:12px; }
+    #runningTotalHint { text-align:center; font-size:.9em; margin-top:5px; color:#666; font-style:italic; }
+    #poolProgress { background:#e9ecef; padding:4px 8px; border-radius:4px; font-weight:bold; margin-right:10px; }
+    .summary-container { font-family: system-ui, -apple-system, sans-serif; }
+    .stats-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:10px; margin:15px 0; }
+    .stats-grid div { padding:8px; background:#f8f9fa; border-radius:4px; }
+    .competition-stats { background:#fff3cd; padding:10px; border-radius:4px; margin:10px 0; }
+    .topbar{display:flex; gap:8px; align-items:center; margin-bottom:6px}
+    .topbar .spacer{flex:1}
+    .muted{opacity:.7}
+    .timer{font-variant-numeric:tabular-nums}
+    .edu-formula{margin-top:4px; font-weight:600}
+    .numpad button{min-width:36px; min-height:32px; margin:2px}
   </style>
-</head>
-<body>
 
-  <div class="title">{{ game.title or 'Sum 4 Cards' }}</div>
-
-  <div class="table" id="table">
-    <div class="card face-down" id="card-0"></div>
-    <div class="card face-down" id="card-1"></div>
-    <div class="card face-down" id="card-2"></div>
-    <div class="card face-down" id="card-3"></div>
+  <!-- Confirmation Modals -->
+  <div id="restartModal" class="modal-backdrop" style="display: none;">
+    <div class="modal">
+      <div class="modal-head">
+        <h3>Restart Game?</h3>
+        <button class="close" id="restartClose">✕</button>
+      </div>
+      <p>Are you sure you want to restart? This will reset all game statistics.</p>
+      <div class="modal-buttons">
+        <button id="restartCancel" class="secondary-btn">Cancel</button>
+        <button id="restartConfirm" class="danger-btn">Restart</button>
+      </div>
+    </div>
   </div>
 
-  <div class="controls">
-    <button id="btn-reveal" class="btn">Reveal Next</button>
-    <input id="answer" type="number" inputmode="numeric" class="hidden" placeholder="Enter total" />
-    <button id="btn-finish" class="btn hidden">Finish</button>
-    <span id="feedback"></span>
+  <!-- Summary Modal -->
+  <div class="modal-backdrop" id="summaryBackdrop" role="dialog" aria-modal="true" style="display:none;">
+    <div class="modal">
+      <div class="modal-head">
+        <h3>Session Summary</h3>
+        <button class="close" id="summaryClose" style="cursor:pointer">✕</button>
+      </div>
+      <div id="summary-report" style="max-height:50vh; overflow:auto;"></div>
+      <div class="actions" style="margin-top:12px; display:flex; gap:8px; justify-content:flex-end;">
+        <a id="summaryCsv" class="primary-btn" href="#" target="_blank" rel="noopener" style="display:none">Download CSV</a>
+        <button id="summaryExit" class="danger-btn">Exit Game</button>
+        <button id="summaryResume" class="secondary-btn">Resume</button>
+      </div>
+    </div>
   </div>
 
-  <!-- Client code -->
-  <script>
-    const GAME_KEY = "{{ game_key }}";
-  </script>
+  <!-- Pool Completion Modal -->
+  <div class="modal-backdrop" id="poolCompletionBackdrop" role="dialog" aria-modal="true" style="display:none;">
+    <div class="modal">
+      <div class="modal-head">
+        <h3>Pool Results</h3>
+        <button class="close" id="poolCompletionClose" style="cursor:pointer">✕</button>
+      </div>
+      <div id="poolCompletionReport" style="max-height:60vh; overflow:auto;">
+        <div id="poolCompletionStats"></div>
+      </div>
+      <div class="actions" style="margin-top:12px; display:flex; gap:8px; justify-content:flex-end;">
+        <button id="poolCompletionContinue" class="primary-btn">Continue Playing</button>
+        <button id="poolCompletionNewPool" class="secondary-btn">New Pool</button>
+        <button id="poolCompletionSummary" class="info-btn">View Full Summary</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="wrap">
+    <header class="game-header">
+      <h1 class="game-title">Sum 4 Cards</h1>
+      <p class="game-subtitle">Add the revealed cards step-by-step (or all at once)</p>
+    </header>
+
+    <!-- DEBUG PANEL -->
+    <div class="debug-panel" style="display: none;" id="debugPanel">
+      <strong>Debug Info:</strong>
+      <div id="debugContent"></div>
+    </div>
+
+    <!-- Top bar with progress, help/wrench, timer -->
+    <div class="topbar">
+      <div id="progressTitle" class="muted">Q0 [—]</div>
+      <div class="spacer"></div>
+      <button id="btnHowto" title="How to play">?</button>
+      <button id="btnWrench" title="Debug / samples">🔧</button>
+      <span id="timer" class="timer">00:00</span>
+    </div>
+
+    <div class="panel">
+      <!-- TOPLINE -->
+      <div class="topline">
+        <span id="question">Ready — press Deal</span>
+        <span id="poolProgress" style="display: none;"></span>
+
+        <div class="right-tools">
+          <details class="settings">
+            <summary>Settings</summary>
+
+            <div class="settings-row">
+              <label>
+                Reveal Mode
+                <select id="revealMode">
+                  <option value="two_then_one">Step by step (2 + 1 + 1)</option>
+                  <option value="one_by_one">One by one</option>
+                  <option value="all_at_once">All at once</option>
+                </select>
+              </label>
+
+              <label>
+                Difficulty
+                <select id="difficulty">
+                  <option value="auto">Auto</option>
+                  <option value="easy">Easy</option>
+                  <option value="medium">Medium</option>
+                  <option value="hard">Hard</option>
+                </select>
+              </label>
+
+              <label>
+                <input type="checkbox" id="autoDeal" checked>
+                Auto-Deal
+              </label>
+
+              <label>
+                <input type="checkbox" id="showRunningTotal" checked>
+                Show running total hint
+              </label>
+            </div>
+
+            <!-- SINGLE CASE INPUT -->
+            <!-- ✅ FIX: Remove style="display:none" to make "Go" available in all modes -->
+            <div class="settings-row" id="singleRow">
+              <label>Jump to Case ID:
+                <input type="number" id="singleCaseId" placeholder="e.g., 125"
+                       min="1" max="1820"
+                       title="Enter a number between 1 and 1820"
+                       style="width: 80px;">
+              </label>
+              <button id="singleGo" class="info-btn">Go</button>
+            </div>
+
+            <!-- POOL INPUT (for custom/competition) -->
+            <div class="settings-row" id="poolRow" style="display:none;">
+              <label for="poolInput" style="display:block;">Case Pool (IDs)</label>
+              <textarea id="poolInput" placeholder="e.g., 18, 28, 95, 108"
+                        style="width: 100%; height: 60px; margin-bottom: 8px;"></textarea>
+
+              <div id="compWrap" style="display:none;">
+                <label for="compMinutes" style="display:block;">Competition Duration (minutes)</label>
+                <input id="compMinutes" type="number" min="1" max="60" value="5" style="width: 80px;">
+              </div>
+
+              <div style="display: flex; gap: 8px; margin-top: 8px;">
+                <button id="savePool" class="info-btn">Save Pool</button>
+                <button id="clearPool" class="secondary-btn">Clear Pool</button>
+              </div>
+
+              <small class="muted block">Up to 25 IDs (1–1820). Any separators: space, comma, or "|".</small>
+            </div>
+
+            <!-- Pool mode selector -->
+            <div class="settings-row">
+              <label>Mode
+                <select id="poolState">
+                  <option value="single" selected>single</option>
+                  <option value="custom">custom</option>
+                  <option value="competition">competition</option>
+                </select>
+              </label>
+            </div>
+          </details>
+
+          <!-- replaced spans with buttons above -->
+        </div>
+      </div>
+
+      <!-- Question + Educational formula + Hint -->
+      <div class="question-wrap" style="margin:6px 0 10px;">
+        <div id="eduFormula" class="edu-formula"></div>
+        <div><span id="runningTotalHint"></span></div>
+      </div>
+
+      <div class="board">
+        <!-- Cards -->
+        <div id="cards" class="cards sum4-cards-container"
+             data-game-key="{{ game_key }}"
+             data-back="{{ url_for('games_assets_bp.static', filename='cards/back.png') }}"
+             data-void="{{ url_for('games_assets_bp.static', filename='cards/void.png') }}"
+             data-init='{{ initial_cfg | tojson }}'>
+          <img class="card" id="card-0" alt="back">
+          <img class="card" id="card-1" alt="back">
+          <img class="card" id="card-2" alt="back">
+          <img class="card" id="card-3" alt="back">
+        </div>
+
+        <!-- Message -->
+        <div id="msg" class="status"></div>
+
+        <!-- Answer box -->
+        <div class="answer-container">
+          <input id="answer" class="answer-box" type="number" inputmode="numeric"
+                 placeholder="Enter running sum…" autocomplete="off" />
+          <div id="answerFeedback" class="answer-feedback"></div>
+        </div>
+
+        <!-- Numeric keypad -->
+        <div class="num-panel">
+          <div class="num-wrap" id="numPad">
+            <button data-num="7">7</button>
+            <button data-num="8">8</button>
+            <button data-num="9">9</button>
+            <button data-num="4">4</button>
+            <button data-num="5">5</button>
+            <button data-num="6">6</button>
+            <button data-num="1">1</button>
+            <button data-num="2">2</button>
+            <button data-num="3">3</button>
+            <button data-num="0">0</button>
+          </div>
+        </div>
+
+        <!-- Main actions -->
+        <div class="button-row">
+          <button id="backBtn" data-action="back">⌫  Back</button>
+          <button id="clearBtn" data-action="clear">Clear</button>
+          <button id="help" class="info-btn">Help (H)</button>
+          <button id="deal" class="primary-btn">Deal (D)</button>
+        </div>
+
+        <!-- Secondary actions -->
+        <div class="button-row">
+          <button id="restart" class="danger-btn">Restart (R)</button>
+          <button id="exit" class="secondary-btn">Exit (X)</button>
+          <button id="check" class="success-btn">Check (Enter)</button>
+        </div>
+
+        <!-- Solutions -->
+        <div id="solutionPanel" class="solution-panel-hidden sum4-solution">
+          <div id="solutionMsg"></div>
+        </div>
+
+        <!-- Stats -->
+        <div class="stats">
+          <span id="played">Played: 0</span>
+          <span id="solved">Solved: 0</span>
+          <span id="revealed">Helped: 0</span>
+          <span id="incorrect">Wrong: 0</span>
+          <span id="skipped">Skipped: 0</span>
+          <span id="totalTime">Time: 00:00</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- How-to Modal -->
+  <div class="modal-backdrop" id="howToBackdrop" role="dialog" aria-modal="true" style="display:none;">
+    <div class="modal">
+      <div class="modal-head">
+        <h3>How it works</h3>
+        <button class="close" id="howToClose" style="cursor:pointer">✕</button>
+      </div>
+      <div style="max-height:60vh; overflow:auto;">
+        <p><strong>Sum 4 Cards</strong> is a mental math game where you add playing cards step by step.</p>
+        <h4>Game Rules:</h4>
+        <ul>
+          <li>Cards are revealed in groups (2 cards first, then 1, then 1)</li>
+          <li>Add the values of the revealed cards together</li>
+          <li>Enter the running total after each reveal</li>
+          <li>Aces count as 1, Jacks as 11, Queens as 12, Kings as 13</li>
+          <li>Get the final sum correct to complete the hand</li>
+        </ul>
+        <h4>Game Modes:</h4>
+        <ul>
+          <li><strong>Single Case:</strong> Play individual puzzles</li>
+          <li><strong>Custom Pool:</strong> Practice with a set of puzzles</li>
+          <li><strong>Competition:</strong> Timed challenge with multiple puzzles</li>
+        </ul>
+        <h4>Controls:</h4>
+        <ul>
+          <li><strong>Check (Enter):</strong> Submit your answer</li>
+          <li><strong>Deal (D):</strong> Start a new hand</li>
+          <li><strong>Help (H):</strong> Get the current sum (not available in competition)</li>
+          <li><strong>Skip (N):</strong> Skip to next puzzle</li>
+          <li><strong>Restart (R):</strong> Reset all statistics</li>
+          <li><strong>Exit (X):</strong> View summary and exit</li>
+        </ul>
+      </div>
+      <div class="actions" style="margin-top:12px;">
+        <button onclick="hideModal('#howToBackdrop')" class="primary-btn">Got it!</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Debug Samples Modal (used by 🔧 button) -->
+  <div id="debugSamplesModal" class="modal-backdrop" style="display:none;">
+    <div class="modal">
+      <div class="modal-head">
+        <h3>Sample puzzles</h3>
+        <button class="close" onclick="this.closest('#debugSamplesModal').style.display='none'">✕</button>
+      </div>
+      <div id="debugSamplesList">Loading…</div>
+      <div class="actions" style="margin-top:12px; display:flex; gap:8px; justify-content:flex-end;">
+        <button class="secondary-btn" onclick="this.closest('#debugSamplesModal').style.display='none'">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Use the new finalized JS -->
   <script src="{{ url_for('sum4.static', filename='js/sum4.js') }}"></script>
-</body>
-</html>
-
+{% endblock %}
