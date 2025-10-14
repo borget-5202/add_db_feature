@@ -2,6 +2,7 @@
 from __future__ import annotations
 import time, json, secrets, logging
 from typing import List, Dict, Any, Optional
+import random
 
 from flask import request, render_template, jsonify, current_app, make_response, url_for
 from sqlalchemy import text
@@ -22,26 +23,83 @@ except Exception:
         persist_session_from_id,
     )
 
-logger = logging.getLogger(__name__)
+# =======================
+# DEBUG SWITCH + LOGGER
+# =======================
+DEBUG_SUM4 = True
+logger = logging.getLogger("sum4")
+logger.setLevel(logging.INFO)
+
+def dbg(*args, **kwargs):
+    if DEBUG_SUM4:
+        try:
+            logger.info(" ".join(str(a) for a in args))
+        except Exception:
+            print("[SUM4]", *args)
+
 GAME_KEY = "sum_4_cards"
 
-# ---------------- Runtime session state (in-memory, per session_id) ----------------
+# ---------------- Runtime session state ----------------
 SESSIONS: Dict[str, Dict[str, Any]] = {}
 
 def _sid() -> str:
     return get_or_create_session_id(request)
 
-def _state() -> Dict[str, Any]:
-    # baseline state every game can share (played/solved/time/etc)
-    st = SESSIONS.setdefault(_sid(), default_state())
-    # ensure sum4-specific keys exist
-    st.setdefault("per_puzzle", [])
-    st.setdefault("current_hand", None)
-    st.setdefault("pool", {"mode": None, "ids": [], "index": 0, "done": False})
-    return st
-
 def _now_ms() -> int:
     return int(time.time() * 1000)
+
+def _fmt_mmss(ms: int) -> str:
+    s = int((ms or 0)/1000); m = s//60; r = s%60
+    return f"{m:02d}:{r:02d}"
+
+def _state() -> Dict[str, Any]:
+    st = SESSIONS.setdefault(_sid(), default_state())
+
+    # Session context
+    st.setdefault("session_context", {
+        "type": "single",     # "single", "pool_custom", "pool_competition"
+        "pool_id": None,
+        "started_at": _now_ms()
+    })
+
+    # Overall session stats (persist across puzzles until user resets)
+    st.setdefault("overall_stats", {
+        "played": 0, "solved": 0,
+        "helped": 0, "incorrect": 0, "skipped": 0,
+        "total_time_ms": 0, "total_attempts": 0,
+        "correct_steps": 0
+    })
+
+    # Also expose "stats" as an alias for compatibility with older code
+    st.setdefault("stats", st["overall_stats"])
+
+    # Pool stats (we also keep pool["stats"], this is auxiliary)
+    st.setdefault("pool_stats", {
+        "played": 0, "solved": 0,
+        "helped": 0, "incorrect": 0, "skipped": 0,
+        "total_time_ms": 0, "total_attempts": 0,
+        "correct_steps": 0
+    })
+
+    # Pool state
+    st.setdefault("pool", {
+        "mode": None,       # None / "custom" / "competition"
+        "ids": [],
+        "completed": set(),
+        "start_time": None,
+        # pool["stats"] is created/updated when pool runs
+    })
+
+    # History of puzzles in this session (for modal)
+    st.setdefault("history", [])
+    # Per-puzzle snapshots (legacy use; we still append finalized hands)
+    st.setdefault("per_puzzle", [])
+    st.setdefault("current_hand", None)
+
+    if "session_start_ms" not in st:
+        st["session_start_ms"] = _now_ms()
+
+    return st
 
 def _fetch_game_row() -> Dict[str, Any]:
     row = db.session.execute(
@@ -54,18 +112,17 @@ def _fetch_game_row() -> Dict[str, Any]:
 
 # ---------------- Puzzle fetch ----------------
 def _fetch_case(case_id: Optional[int] = None, difficulty: Optional[str] = None) -> Dict[str, Any]:
+    dbg("DEBUG: _fetch_case:", GAME_KEY, "case_id=", case_id, "difficulty=", difficulty)
     if case_id is None:
         sql = """
         SELECT v.case_id, w.cards_key, w.ranks, w.sum_pips
         FROM app.v_game_case_map v
         JOIN app.puzzle_warehouse w ON w.cards_key = v.cards_key
-        WHERE v.game_key = :k
-          AND (:diff IS NULL OR v.tags->>'difficulty' = :diff)
-          AND v.is_active = true
+        WHERE v.game_key = :k AND v.is_active = true
         ORDER BY random()
         LIMIT 1
         """
-        row = db.session.execute(text(sql), {"k": GAME_KEY, "diff": difficulty}).mappings().first()
+        row = db.session.execute(text(sql), {"k": GAME_KEY}).mappings().first()
     else:
         sql = """
         SELECT v.case_id, w.cards_key, w.ranks, w.sum_pips
@@ -74,27 +131,21 @@ def _fetch_case(case_id: Optional[int] = None, difficulty: Optional[str] = None)
         WHERE v.game_key = :k AND v.case_id = :cid
         """
         row = db.session.execute(text(sql), {"k": GAME_KEY, "cid": case_id}).mappings().first()
+
+    dbg("DEBUG: Query result:", row)
     if not row:
         raise RuntimeError(f"No puzzle found for {GAME_KEY} (case_id={case_id}, diff={difficulty}).")
-    return dict(row)
+
+    result = dict(row)
+    dbg("DEBUG: Returning case:", result)
+    return result
 
 # ---------------- Reveal groups ----------------
 MODE_MAP = {
-    "two_then_one": [[0,1],[2],[3]],   # 2 at start → 1 → 1
-    "one_by_one":   [[0],[1],[2],[3]],
-    "all":          [[0,1,2,3]],
+    "two_then_one": [[0,1],[2],[3]],
+    "one_by_one": [[0],[1],[2],[3]],
+    "all_at_once": [[0,1,2,3]],
 }
-
-def _groups_from_meta(game_meta: Optional[dict]) -> List[List[int]]:
-    default = MODE_MAP["two_then_one"]
-    try:
-        reveal = (game_meta or {}).get("reveal") or {}
-        groups = reveal.get("groups")
-        if isinstance(groups, list) and all(isinstance(g, list) for g in groups):
-            return groups
-    except Exception:
-        pass
-    return default
 
 def _target_for_step(ranks: List[int], step: int, groups: List[List[int]]) -> int:
     seen = set()
@@ -103,15 +154,26 @@ def _target_for_step(ranks: List[int], step: int, groups: List[List[int]]) -> in
             seen.add(slot)
     return sum(int(ranks[s]) for s in sorted(seen))
 
-def _envelope(
-    game: Dict[str, Any],
-    case: Dict[str, Any],
-    session_sid: str,
-    groups_override: Optional[List[List[int]]] = None
-) -> Dict[str, Any]:
-    ranks: List[int] = [int(x) for x in case["ranks"]]
-    groups = groups_override or _groups_from_meta(game.get("metadata"))
+def _envelope(game, case, session_sid, groups_override=None):
+    ranks_orig = [int(x) for x in case["ranks"]]
+    ranks_shuffled = ranks_orig[:]
+    random.shuffle(ranks_shuffled)
+
+    groups = groups_override or MODE_MAP["two_then_one"]
     init_reveal = groups[0] if groups else []
+
+    suits = ['S', 'H', 'D', 'C']
+    random.shuffle(suits)
+    cards = []
+    for i, r in enumerate(ranks_shuffled):
+        cards.append({
+            "id": f"c{i}",
+            "rank": r,
+            "suit": suits[i],
+            "visible": False,
+            "face": "front",
+        })
+
     return {
         "session_sid": session_sid,
         "game_key": GAME_KEY,
@@ -120,22 +182,107 @@ def _envelope(
         "reveal_mode": "server",
         "table": {
             "slots": 4,
-            "layout": [0,1,2,3],
-            "cards": [
-                {"id":"c0","rank":ranks[0],"visible": False,"face":"front"},
-                {"id":"c1","rank":ranks[1],"visible": False,"face":"front"},
-                {"id":"c2","rank":ranks[2],"visible": False,"face":"front"},
-                {"id":"c3","rank":ranks[3],"visible": False,"face":"front"},
-            ],
-            "deck":[]
+            "layout": [0, 1, 2, 3],
+            "cards": cards,
+            "deck": []
         },
         "reveal": {"groups": groups, "server_step": 0, "init_reveal": init_reveal},
-        "grading":{"type":"sum_progressive"},
-        "ui_hints":{"pace":"normal","audio_cues":False,"show_back_card":False},
-        "_state":{"start_ms": _now_ms()}
+        "grading": {"type": "sum_progressive"},
+        "ui_hints": {"pace": "normal", "audio_cues": False, "show_back_card": False},
+        "_state": {"start_ms": _now_ms()},
     }
 
-# ---------------- Hand bookkeeping ----------------
+# ---------------- Pool helpers ----------------
+def _get_next_pool_case(state: Dict[str, Any]) -> Optional[int]:
+    pool = state.get("pool", {})
+    if pool.get("mode") not in ("custom", "competition"):
+        return None
+    case_ids = pool.get("ids", [])
+    completed = set(pool.get("completed", []))
+    dbg("DEBUG NEXT CASE: case_ids=", case_ids, "completed=", completed)
+    for case_id in case_ids:
+        if case_id not in completed:
+            dbg("DEBUG NEXT CASE: Returning", case_id)
+            return case_id
+    dbg("DEBUG NEXT CASE: No more cases, returning None")
+    return None
+
+def _update_pool_stats(state: Dict[str, Any], case_id: int, solved: bool, helped: bool = False):
+    pool = state.get("pool", {})
+    if pool.get("mode") not in ("custom", "competition"):
+        return
+
+    # Mark completion in pool
+    completed = set(pool.get("completed", []))
+    completed.add(int(case_id))
+    pool["completed"] = list(completed)
+    dbg("DEBUG UPDATE POOL: Added case", case_id, "to completed, now:", pool["completed"])
+
+    # Maintain pool["stats"] (used by pool summary)
+    pool_stats = pool.setdefault("stats", {
+        "played": 0, "solved": 0, "helped": 0, "incorrect": 0, "skipped": 0,
+        "total_attempts": 0, "time_ms": 0, "correct_steps": 0
+    })
+    pool_stats["played"] = len(completed)
+    if solved:
+        pool_stats["solved"] = pool_stats.get("solved", 0) + 1
+    else:
+        pool_stats["skipped"] = pool_stats.get("skipped", 0) + 1
+    if helped:
+        pool_stats["helped"] = pool_stats.get("helped", 0) + 1
+    dbg("DEBUG UPDATE POOL: final pool_stats:", pool_stats)
+
+def _get_pool_progress(state: Dict[str, Any]) -> Dict[str, Any]:
+    pool = state.get("pool", {})
+    mode = pool.get("mode")
+    if mode not in ("custom", "competition"):
+        return {"active": False}
+    case_ids = pool.get("ids", [])
+    completed = set(pool.get("completed", []))
+    unfinished = [cid for cid in case_ids if cid not in completed]
+    return {
+        "active": True,
+        "mode": mode,
+        "total_cases": len(case_ids),
+        "completed_cases": len(completed),
+        "remaining_cases": len(unfinished),
+        "unfinished_cases": unfinished,
+        "progress": f"{len(completed)}/{len(case_ids)}",
+        "completed_list": list(completed)
+    }
+
+# ---------------- Competition Timing ----------
+def _start_competition_timer(state: Dict[str, Any], minutes: int):
+    state["competition_ends_at"] = _now_ms() + (minutes * 60 * 1000)
+    state["competition_duration_minutes"] = minutes
+    return state["competition_ends_at"]
+
+def _get_competition_time_remaining(state: Dict[str, Any]) -> Dict[str, Any]:
+    ends_at = state.get("competition_ends_at")
+    if not ends_at:
+        return {"active": False, "remaining_ms": 0}
+    remaining_ms = max(0, ends_at - _now_ms())
+    total_ms = state.get("competition_duration_minutes", 5) * 60 * 1000
+    elapsed_ms = total_ms - remaining_ms
+    return {"active": True, "remaining_ms": remaining_ms, "total_ms": total_ms,
+            "elapsed_ms": elapsed_ms, "ends_at": ends_at}
+
+def _is_competition_finished(state: Dict[str, Any]) -> bool:
+    t = _get_competition_time_remaining(state)
+    return t["active"] and t["remaining_ms"] <= 0
+
+def _cleanup_expired_competition(state: Dict[str, Any]) -> bool:
+    pool = state.get("pool", {})
+    if (pool.get("mode") == "competition" and 
+        _is_competition_finished(state) and
+        _get_next_pool_case(state) is None):
+        dbg("DEBUG: Auto-cleaning expired completed competition")
+        state["competition_ends_at"] = None
+        state["help_disabled"] = False
+        return True
+    return False
+
+# ---------------- Hand Management ----------------
 def _begin_hand(state: Dict[str, Any], *, case_id: int, difficulty: Optional[str]) -> None:
     state["current_hand"] = {
         "case_id": int(case_id),
@@ -148,66 +295,94 @@ def _begin_hand(state: Dict[str, Any], *, case_id: int, difficulty: Optional[str
         "started_at_ms": _now_ms(),
         "ended_at_ms": None,
         "final_outcome": None,
+        "is_pool_puzzle": state.get("pool", {}).get("mode") in ("custom", "competition")
     }
-    # Count played once per dealt hand
-    st = state.setdefault("stats", {})
-    st["played"] = int(st.get("played", 0)) + 1
 
 def _mark_attempt(state: Dict[str, Any], ok: bool) -> None:
     cur = state.get("current_hand")
-    if not cur: return
-    cur["attempts"] = int(cur.get("attempts", 0)) + 1
+    if not cur:
+        return
+    cur["attempts"] = cur.get("attempts", 0) + 1
+
+    overall = state.setdefault("overall_stats", {})
+    overall["total_attempts"] = overall.get("total_attempts", 0) + 1
+
     if not ok:
-        cur["incorrect_attempts"] = int(cur.get("incorrect_attempts", 0)) + 1
-        s = state.setdefault("stats", {})
-        s["answer_wrong"] = int(s.get("answer_wrong", 0)) + 1
+        cur["incorrect_attempts"] = cur.get("incorrect_attempts", 0) + 1
+        overall["incorrect"] = overall.get("incorrect", 0) + 1
     else:
-        s = state.setdefault("stats", {})
-        s["answer_correct"] = int(s.get("answer_correct", 0)) + 1
+        overall["correct_steps"] = overall.get("correct_steps", 0) + 1
+
+    if cur.get("is_pool_puzzle"):
+        pstats = state.setdefault("pool_stats", {})
+        pstats["total_attempts"] = pstats.get("total_attempts", 0) + 1
+        if not ok:
+            pstats["incorrect"] = pstats.get("incorrect", 0) + 1
+        else:
+            pstats["correct_steps"] = pstats.get("correct_steps", 0) + 1
 
 def _mark_help(state: Dict[str, Any]) -> None:
     cur = state.get("current_hand")
-    if not cur: return
+    if not cur:
+        return
     cur["helped"] = True
-    s = state.setdefault("stats", {})
-    s["help_all"] = int(s.get("help_all", 0)) + 1  # keep same counter name used by DB summary
+    overall = state.setdefault("overall_stats", {})
+    overall["helped"] = overall.get("helped", 0) + 1
+    if cur.get("is_pool_puzzle"):
+        pstats = state.setdefault("pool_stats", {})
+        pstats["helped"] = pstats.get("helped", 0) + 1
 
 def _finalize_hand(state: Dict[str, Any], *, solved: bool, outcome: str) -> None:
     cur = state.get("current_hand")
-    if not cur: return
+    if not cur:
+        return
     cur["solved"] = bool(solved)
     cur["final_outcome"] = outcome
-    cur["ended_at_ms"] = cur.get("ended_at_ms") or _now_ms()
-    # Tally top-line stats
-    s = state.setdefault("stats", {})
+    cur["ended_at_ms"] = _now_ms()
+
+    # Duration
+    start = cur.get("started_at_ms", 0)
+    end   = cur.get("ended_at_ms", 0)
+    dur   = end - start if end > start else 0
+    cur["duration_ms"] = dur
+
+    # Overall stats
+    overall = state.setdefault("overall_stats", {})
+    overall["played"] = overall.get("played", 0) + 1
     if solved:
-        s["solved"] = int(s.get("solved", 0)) + 1
-    # append to per_puzzle and clear
+        overall["solved"] = overall.get("solved", 0) + 1
+    if cur.get("skipped"):
+        overall["skipped"] = overall.get("skipped", 0) + 1
+    overall["total_time_ms"] = overall.get("total_time_ms", 0) + dur
+
+    # Pool stats (aux)
+    if cur.get("is_pool_puzzle"):
+        pstats = state.setdefault("pool_stats", {})
+        pstats["played"] = pstats.get("played", 0) + 1
+        if solved:
+            pstats["solved"] = pstats.get("solved", 0) + 1
+        if cur.get("skipped"):
+            pstats["skipped"] = pstats.get("skipped", 0) + 1
+        pstats["total_time_ms"] = pstats.get("total_time_ms", 0) + dur
+
+    # Store snapshot
     state.setdefault("per_puzzle", []).append(dict(cur))
     state["current_hand"] = None
-
-def _reset_runtime_state(state: Dict[str, Any]) -> None:
-    # Keep identity-ish things if you later add them; for now we reset all gameplay
-    new = default_state()
-    # Preserve pool config across sessions if you prefer; here we clear it:
-    new["pool"] = {"mode": None, "ids": [], "index": 0, "done": False}
-    SESSIONS[_sid()] = new
 
 # ---------------- Routes ----------------
 @bp.get("/play")
 def play():
     game = _fetch_game_row()
-    # NEW: pick up initial config from query params for shareable links
     initial_cfg = {
-        "case_id": request.args.get("case_id"),             # e.g., /play?case_id=123
+        "case_id": request.args.get("case_id"),
         "difficulty": (request.args.get("difficulty") or "").strip().lower() or None,
-        "reveal": (request.args.get("reveal") or "").strip() or None,  # 'all'|'one_by_one'|'two_then_one'
+        "reveal": (request.args.get("reveal") or "").strip() or None,
         "autodeal": request.args.get("autodeal") in ("1", "true", "yes"),
     }
+    dbg("in sum4 card game now")
     return render_template("sum_4_cards/sum4_play.html",
                            game=game, game_key=GAME_KEY,
                            initial_cfg=initial_cfg)
-
 
 @bp.post("/api/start")
 def api_start():
@@ -215,39 +390,90 @@ def api_start():
     case_id = data.get("case_id")
     difficulty = (data.get("difficulty") or "").strip().lower() or None
     chosen_mode = (data.get("reveal_mode") or "").strip()
+    dbg("api_start", data)
 
+    st = _state()
+    session_ctx = st["session_context"]
+
+    dbg(f"DEBUG START: case_id={case_id}, reveal_mode={chosen_mode}, difficulty={difficulty}, pool_mode={st.get('pool', {}).get('mode')}")
+    dbg("DEBUG SESSION CTX:", session_ctx)
+
+    # Cleanup expired competition (if any)
+    _cleanup_expired_competition(st)
+
+    if _is_competition_finished(st):
+        return jsonify({"ok": False, "error": "competition_finished", "message": "Competition time has expired"}), 400
+
+    # Pool-directed case picking
+    pool = st.get("pool", {})
+    if case_id is None and pool.get("mode") in ("custom", "competition"):
+        next_case_id = _get_next_pool_case(st)
+        if next_case_id is None:
+            dbg("DEBUG: Pool completed, returning success")
+            pool_progress = _get_pool_progress(st)
+            return jsonify({
+                "ok": True,
+                "pool_completed": True,
+                "pool_progress": pool_progress,
+                "message": "All pool cases completed - great job!"
+            }), 200
+        case_id = next_case_id
+        session_ctx["type"] = f"pool_{pool['mode']}"
+        session_ctx["pool_id"] = f"pool_{_now_ms()}"
+    else:
+        session_ctx["type"] = "single"
+        session_ctx["pool_id"] = None
+        if case_id is None:
+            picked = _fetch_case(case_id=None, difficulty=difficulty)
+            case_id = int(picked["case_id"])
+            dbg("DEBUG PICKED RANDOM CASE_ID:", case_id, f"(difficulty={difficulty or 'auto'})")
+
+    dbg("DEBUG FINAL CASE_ID:", case_id)
+    dbg("DEBUG FINAL SESSION TYPE:", session_ctx["type"])
+
+    # Fetch resources and begin hand
     game = _fetch_game_row()
     case = _fetch_case(case_id, difficulty=difficulty)
-
-    # cookie-style sid
-    try:
-        session_sid = get_or_create_session_id(request)
-    except Exception:
-        session_sid = request.cookies.get("session_id") or secrets.token_hex(16)
-
-    # begin/replace current hand in server state
-    st = _state()
+    session_sid = get_or_create_session_id(request)
     _begin_hand(st, case_id=case["case_id"], difficulty=difficulty)
 
-    groups = MODE_MAP.get(chosen_mode)  # None => fall back to DB
+    groups = MODE_MAP.get(chosen_mode, MODE_MAP["two_then_one"])
     env = _envelope(game, case, session_sid, groups_override=groups)
-    env["help_disabled"] = bool(_state().get("help_disabled", False))  # NEW
-    env["difficulty"] = difficulty or "auto"
 
-    resp = make_response(jsonify({"ok": True, "envelope": env}))
+    # Competition hint lock
+    if pool.get("mode") == "competition":
+        env["help_disabled"] = True
+        st["help_disabled"] = True
+    else:
+        env["help_disabled"] = False
+        st["help_disabled"] = False
+
+    # Uniform pool flags
+    pool_progress = _get_pool_progress(st)
+    pool_completed = pool_progress.get("active", False) and pool_progress.get("remaining_cases", 0) == 0
+
+    resp_data = {
+        "ok": True,
+        "envelope": env,
+        "pool_progress": pool_progress,
+        "pool_completed": pool_completed,
+        "time_info": _get_competition_time_remaining(st),
+        "session_type": session_ctx["type"]
+    }
+    resp = make_response(jsonify(resp_data))
+
     if not request.cookies.get("session_id"):
-        # consistency with game_core helper naming
         resp.set_cookie("session_id", session_sid, max_age=60*60*24*365, samesite="Lax")
+
+    dbg("DEBUG API_START SESSIONID:", str(request.cookies.get("session_id")))
     return resp
 
 @bp.post("/api/step")
 def api_step():
-    """
-    Progressive gating:
-      - {"server_step": n, "answer": 23, "envelope": {...}}
-      - {"server_step": n, "action":"help", "envelope": {...}}
-    """
+    dbg("=== STEP ENDPOINT CALLED ===")
     payload = request.get_json(silent=True) or {}
+    dbg("STEP payload:", payload)
+
     server_step = int(payload.get("server_step", 0))
     action = payload.get("action", "answer")
     env = payload.get("envelope") or {}
@@ -255,311 +481,133 @@ def api_step():
     if not ranks or len(ranks) < 4:
         return jsonify({"ok": False, "error": "missing_ranks"}), 400
 
-    groups = (env.get("reveal") or {}).get("groups") or [[0,1],[2],[3]]
+    groups = (env.get("reveal") or {}).get("groups") or MODE_MAP["two_then_one"]
     if server_step < 0 or server_step >= len(groups):
         return jsonify({"ok": True, "reveal": [], "server_step": server_step, "done": True})
 
     current_target = _target_for_step(ranks, server_step, groups)
-
     st = _state()
 
     if action == "help":
         _mark_help(st)
-        return jsonify({"ok": True, "help": True, "expected": int(current_target), "server_step": server_step, "done": False})
+        return jsonify({
+            "ok": True, "help": True,
+            "expected": int(current_target),
+            "server_step": server_step, "done": False
+        })
 
-    # answer flow
-    if "answer" not in payload:
+    if "answer" not in payload and "value" not in payload:
         return jsonify({"ok": False, "error": "missing_answer"}), 400
 
-    val = int(payload.get("answer"))
-    correct = (int(val) == int(current_target))
+    val = payload.get("answer")
+    if val is None and "value" in payload:
+        val = payload["value"]
+    try:
+        val = int(val)
+    except Exception:
+        return jsonify({"ok": False, "error": "bad_answer"}), 400
+
+    correct = (val == current_target)
     _mark_attempt(st, correct)
 
     if not correct:
-        return jsonify({"ok": True, "correct": False, "server_step": server_step, "done": False})
+        return jsonify({
+            "ok": True, "correct": False,
+            "expected": int(current_target),
+            "server_step": server_step, "done": False
+        })
 
     next_step = server_step + 1
     if next_step >= len(groups):
-        # final stage correct
-        return jsonify({"ok": True, "correct": True, "reveal": [], "server_step": next_step, "done": True, "expected": int(current_target)})
+        # Finished all steps
+        resp = {"ok": True, "correct": True, "reveal": [],
+                "server_step": next_step, "done": True,
+                "expected": int(current_target)}
+        dbg("STEP response for complete", resp)
+        return jsonify(resp)
 
-    return jsonify({"ok": True, "correct": True, "reveal": groups[next_step], "server_step": next_step, "done": False})
+    # Continue to next reveal group
+    resp = {"ok": True, "correct": True, "reveal": groups[next_step],
+            "server_step": next_step, "done": False,
+            "expected": int(current_target)}
+    dbg("STEP response for unfinished pool", resp)
+    return jsonify(resp)
 
 @bp.post("/api/finish")
 def api_finish():
-    """
-    After final correct; persists one play row in app.game_sessions summary_json (session-level).
-    """
     payload = request.get_json(silent=True) or {}
-    case_id = payload.get("case_id")
+    case_id = int(payload.get("case_id"))
     final_answer = payload.get("final_answer")
     help_count = int(payload.get("help_count") or 0)
+
+    dbg("DEBUG FINISH: case_id=", case_id, "final_answer=", final_answer)
 
     if final_answer is None:
         return jsonify({"ok": False, "error": "missing_final_answer"}), 400
 
     case = _fetch_case(case_id)
-    ranks = [int(x) for x in case["ranks"]]
     target = int(case["sum_pips"])
     is_correct = (int(final_answer) == target)
 
-    # update server runtime hand
     st = _state()
     _finalize_hand(st, solved=is_correct, outcome=("solved" if is_correct else "incorrect"))
 
-    # build a compact summary for DB
+    # Append to session history (for modal)
+    # Use the just-finalized per_puzzle entry for timings if present
+    last = (st.get("per_puzzle") or [])[-1] if st.get("per_puzzle") else {}
+    st.setdefault("history", []).append({
+        "case_id": case_id,
+        "result": "correct" if is_correct else "wrong",
+        "answer": int(final_answer),
+        "expected": target,
+        "helps_used": 1 if help_count > 0 or last.get("helped") else 0,
+        "steps": last.get("attempts", 0),   # total 'check' attempts for puzzle
+        "time_ms": last.get("duration_ms", 0),
+        "ts": _now_ms()
+    })
+
+    # Pool bookkeeping
+    pool = st.get("pool", {})
+    dbg("DEBUG FINISH: Current pool mode=", pool.get('mode'), "ids=", pool.get('ids'), "completed=", pool.get('completed'))
+    if pool.get("mode") in ("custom", "competition"):
+        _update_pool_stats(st, case_id, is_correct, help_count > 0)
+        # Also keep a richer pool details list for the pool modal
+        details = st.setdefault("pool_details", [])
+        details.append({
+            "case_id": case_id,
+            "result": "correct" if is_correct else "wrong",
+            "answer": int(final_answer),
+            "expected": target,
+            "helps_used": 1 if help_count > 0 or last.get("helped") else 0,
+            "steps": last.get("attempts", 0),
+            "time_ms": last.get("duration_ms", 0)
+        })
+        dbg("DEBUG FINISH: After update - completed=", pool.get('completed'))
+
+    # Persist snapshot
+    g = _fetch_game_row()
     summary = {
         "game_key": GAME_KEY,
-        "per_puzzle": st.get("per_puzzle", [])[:],  # include current session’s plays so far
-        "totals": {
-            "played": st.get("stats", {}).get("played", 0),
-            "solved": st.get("stats", {}).get("solved", 0),
-            "help_all": st.get("stats", {}).get("help_all", 0),
-            "answer_wrong": st.get("stats", {}).get("answer_wrong", 0),
-        },
+        "per_puzzle": st.get("per_puzzle", [])[:],
+        "pool_progress": _get_pool_progress(st),
+        "totals": st.get("stats", {}),
     }
-
-    g = _fetch_game_row()
-    game_id = int(g["id"])
-    # Persist one session snapshot (like Game24)
     try:
-        persist_session_from_id(db=db, game_id=game_id, game_key=GAME_KEY, state=st, summary=summary)
+        persist_session_from_id(
+            db=db, game_id=int(g["id"]), game_key=GAME_KEY,
+            state=st, summary=summary
+        )
     except Exception as e:
         current_app.logger.exception("persist failed: %s", e)
         return jsonify({"ok": False, "error": "persist_failed"}), 500
 
-    return jsonify({"ok": True, "correct": is_correct, "expected": target})
+    pool_progress = _get_pool_progress(st)
+    pool_completed = pool_progress.get("active", False) and pool_progress.get("remaining_cases", 0) == 0
 
-# ---------------- Summary / Exit / Pool (server-side, Game24-style) ----------------
-def _summary_snapshot(state: Dict[str, Any]) -> Dict[str, Any]:
-    """Small, readable summary like Game24 (totals + per-puzzle list)."""
-    per = state.get("per_puzzle", [])[:]
-    cur = state.get("current_hand")
-    if cur and not cur.get("final_outcome"):
-        tmp = dict(cur)
-        tmp["final_outcome"] = "unsolved_exit"
-        tmp["ended_at_ms"] = tmp.get("ended_at_ms") or _now_ms()
-        per.append(tmp)
-
-    totals = {"solved": 0, "helped": 0, "incorrect": 0, "skipped": 0}
-    for r in per:
-        if r.get("solved"): totals["solved"] += 1
-        if r.get("helped"): totals["helped"] += 1
-        if r.get("final_outcome") == "incorrect": totals["incorrect"] += 1
-        if r.get("skipped"): totals["skipped"] += 1
-
-    # pretty text (mono) like Game24
-    lines = []
-    lines.append("Totals")
-    lines.append(f"  solved:   {totals['solved']}")
-    lines.append(f"  helped:   {totals['helped']}")
-    lines.append(f"  incorrect:{totals['incorrect']}")
-    lines.append(f"  skipped:  {totals['skipped']}")
-    lines.append("")
-    lines.append("Actions")
-    for r in per:
-        cid = int(r.get("case_id") or 0)
-        att = int(r.get("attempts") or 0)
-        helped = "yes" if r.get("helped") else "no"
-        solved = "yes" if r.get("solved") else "no"
-        out = (r.get("final_outcome") or "-")
-        lines.append(f"  #{cid:<4} attempts={att:<2} helped={helped:<3} solved={solved:<3} outcome={out}")
-
-    return {
-        "totals": totals,
-        "per_puzzle": per,
-        "report_html": "<pre>" + "\n".join(lines) + "</pre>",
-    }
-
-@bp.post("/api/summary")
-def api_summary():
-    st = _state()
-    snap = _summary_snapshot(st)
-    return jsonify({"ok": True, "stats": st.get("stats"), "play_summary": snap}), 200
-
-@bp.post("/api/exit")
-def api_exit():
-    """
-    Finalize current hand (as unsolved if in-progress), persist the session,
-    then reset the runtime state and return a redirect URL.
-    """
-    st = _state()
-    if st.get("current_hand"):
-        _finalize_hand(st, solved=False, outcome="unsolved_exit")
-    # Persist session snapshot
-    g = _fetch_game_row()
-    summary = _summary_snapshot(st)
-    try:
-        persist_session_from_id(db=db, game_id=int(g["id"]), game_key=GAME_KEY, state=st, summary=summary)
-    except Exception as e:
-        current_app.logger.exception("persist on exit failed: %s", e)
-    # Reset for next time
-    _reset_runtime_state(st)
-    # Send a home URL like Game24
-    try:
-        home = url_for("home.index")
-    except Exception:
-        home = "/"
-    return jsonify({"ok": True, "redirect_url": home}), 200
-
-@bp.post("/api/pool")
-def api_pool():
-    """
-    Store pool config in server state (custom/competition/off) with ids and timer.
-    Body:
-      { "mode": "custom"|"competition"|"off", "case_ids": [..] | "1,2,3", "minutes": 5 }
-    """
-    st = _state()
-    data = request.get_json(force=True) or {}
-    mode = (data.get("mode") or "").strip().lower()
-
-    if mode not in ("custom", "competition", "off"):
-        return jsonify({"ok": False, "reason": "mode must be 'custom', 'competition', or 'off'"}), 400
-
-    p = st.setdefault("pool", {"mode": None, "ids": [], "index": 0, "done": False})
-
-    if mode == "off":
-        p.update({"mode": None, "ids": [], "index": 0, "done": False})
-        st["help_disabled"] = False
-        st["competition_ends_at"] = None
-        return jsonify({"ok": True, "mode": None, "count": 0, "time_left": None, "help_disabled": False}), 200
-
-    raw_ids = data.get("case_ids") or data.get("ids") or data.get("puzzles") or []
-    if isinstance(raw_ids, str):
-        try:
-            raw_ids = [int(x.strip()) for x in raw_ids.replace("|", ",").replace(" ", ",").split(",") if x.strip()]
-        except ValueError:
-            raw_ids = []
-
-    # validate & clamp list
-    ids: List[int] = []
-    seen = set()
-    for x in raw_ids:
-        try:
-            n = int(x)
-        except Exception:
-            continue
-        if n < 1 or n > 1820 or n in seen:
-            continue
-        seen.add(n)
-        ids.append(n)
-        if len(ids) >= 25: break
-
-    p.update({"mode": mode, "ids": ids, "index": 0, "done": False})
-
-    # competition extras
-    time_left = None
-    if mode == "competition":
-        mins = max(1, min(60, int(data.get("minutes") or 5)))
-        st["competition_ends_at"] = int(time.time() + mins * 60)
-        st["help_disabled"] = True
-        time_left = mins * 60
-    else:
-        st["competition_ends_at"] = None
-        st["help_disabled"] = False
-
-    return jsonify({"ok": True, "mode": mode, "count": len(ids), "time_left": time_left, "help_disabled": st.get("help_disabled", False)}), 200
-
-# -------- CSV Export (current session or last persisted) --------
-import csv, io, datetime
-
-def _ms_to_iso(ms: Optional[int]) -> str:
-    if not ms:
-        return ""
-    # ISO8601 in UTC (e.g., 2025-09-29T17:45:12Z)
-    return datetime.datetime.utcfromtimestamp(ms / 1000.0).replace(microsecond=0).isoformat() + "Z"
-
-@bp.get("/api/export.csv")
-def api_export_csv():
-    """
-    CSV export of per-puzzle rows.
-    By default uses the in-memory *current* session.
-    If ?persisted=1 is passed, tries the most recent persisted summary for this sid+game.
-    Columns:
-      session_sid,case_id,difficulty,attempts,incorrect_attempts,helped,solved,outcome,started_at,ended_at,duration_ms
-    """
-    sid = _sid()
-    use_persisted = request.args.get("persisted") in ("1", "true", "yes")
-
-    rows = None
-    if use_persisted:
-        try:
-            g = _fetch_game_row()
-            rec = db.session.execute(
-                text("""
-                    SELECT summary_json
-                    FROM app.game_sessions
-                    WHERE game_id = :gid AND session_sid = :sid
-                    ORDER BY id DESC
-                    LIMIT 1
-                """),
-                {"gid": int(g["id"]), "sid": sid},
-            ).first()
-            if rec and rec[0]:
-                per = (rec[0] or {}).get("per_puzzle") or []
-                rows = per
-        except Exception as e:
-            current_app.logger.exception("export persisted failed: %s", e)
-
-    if rows is None:
-        st = _state()
-        rows = st.get("per_puzzle", [])[:]
-        # include an in-progress hand as an unsolved record (like summary)
-        cur = st.get("current_hand")
-        if cur and not cur.get("final_outcome"):
-            tmp = dict(cur)
-            tmp["final_outcome"] = "in_progress"
-            tmp["ended_at_ms"] = tmp.get("ended_at_ms") or _now_ms()
-            rows.append(tmp)
-
-    # Build CSV
-    buf = io.StringIO()
-    w = csv.writer(buf)
-    w.writerow([
-        "session_sid","case_id","difficulty","attempts","incorrect_attempts",
-        "helped","solved","outcome","started_at","ended_at","duration_ms"
-    ])
-    for r in rows:
-        start = r.get("started_at_ms")
-        end   = r.get("ended_at_ms")
-        dur   = (int(end) - int(start)) if (start and end) else ""
-        w.writerow([
-            sid,
-            r.get("case_id") or "",
-            (r.get("difficulty") or "auto"),
-            int(r.get("attempts") or 0),
-            int(r.get("incorrect_attempts") or 0),
-            1 if r.get("helped") else 0,
-            1 if r.get("solved") else 0,
-            r.get("final_outcome") or "",
-            _ms_to_iso(start),
-            _ms_to_iso(end),
-            dur
-        ])
-
-    csv_data = buf.getvalue()
-    fn = f"sum4_session_{datetime.datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.csv"
-    resp = make_response(csv_data)
-    resp.headers["Content-Type"] = "text/csv; charset=utf-8"
-    resp.headers["Content-Disposition"] = f'attachment; filename="{fn}"'
-    return resp
-
-
-@bp.post("/api/state")
-def api_state():
-    st = _state()
-    pool = st.get("pool") or {"mode": None, "ids": [], "index": 0, "done": False}
-    ends = st.get("competition_ends_at")
-    time_left = None
-    if ends:
-      time_left = max(0, int(ends - time.time()))
     return jsonify({
-        "ok": True,
-        "pool": pool,
-        "help_disabled": bool(st.get("help_disabled", False)),
-        "time_left": time_left
+        "ok": True, "correct": is_correct, "expected": target,
+        "pool_progress": pool_progress, "pool_completed": pool_completed
     })
-
 
 @bp.post("/api/skip")
 def api_skip():
@@ -567,11 +615,208 @@ def api_skip():
     cur = st.get("current_hand")
     if not cur:
         return jsonify({"ok": False, "error": "no_active_hand"}), 400
-    cur["skipped"] = True
-    # count skipped in stats, finalize
-    s = st.setdefault("stats", {})
-    s["skipped"] = int(s.get("skipped", 0)) + 1
-    _finalize_hand(st, solved=False, outcome="skipped")
-    return jsonify({"ok": True})
 
+    case_id = cur.get("case_id")
+    cur["skipped"] = True
+
+    # Update overall stats (alias kept in st["stats"])
+    overall = st.setdefault("overall_stats", {})
+    overall["skipped"] = overall.get("skipped", 0) + 1
+
+    # Pool stats via helper
+    pool = st.get("pool", {})
+    if pool.get("mode") in ("custom", "competition"):
+        _update_pool_stats(st, case_id, solved=False)
+
+    _finalize_hand(st, solved=False, outcome="skipped")
+
+    pool_progress = _get_pool_progress(st)
+    pool_completed = pool_progress.get("active", False) and pool_progress.get("remaining_cases", 0) == 0
+
+    return jsonify({"ok": True, "pool_progress": pool_progress, "pool_completed": pool_completed})
+
+@bp.post("/api/pool")
+def api_pool():
+    st = _state()
+    data = request.get_json(force=True) or {}
+    mode = (data.get("mode") or "").strip().lower()
+
+    dbg("DEBUG POOL API: Request mode=", mode, " data=", data)
+    dbg("DEBUG POOL API: Current pool state before=", st.get("pool"))
+
+    if mode not in ("custom", "competition", "off"):
+        return jsonify({"ok": False, "reason": "mode must be 'custom', 'competition', or 'off'"}), 400
+
+    p = st.setdefault("pool", {
+        "mode": None, "ids": [], "completed": set(), "start_time": None
+    })
+
+    if mode == "off":
+        dbg("DEBUG POOL API: Clearing pool mode (OFF request)")
+        p.update({"mode": None, "ids": [], "completed": set(), "start_time": None})
+        st["help_disabled"] = False
+        st["competition_ends_at"] = None
+        dbg("DEBUG POOL API: Pool state after OFF=", st.get("pool"))
+        # keep pool stats/history until user starts a new pool or exits
+        return jsonify({"ok": True, "mode": None}), 200
+
+    # Parse case IDs
+    raw_ids = data.get("case_ids") or data.get("ids") or []
+    if isinstance(raw_ids, str):
+        try:
+            raw_ids = [int(x.strip()) for x in raw_ids.replace("|", ",").replace(" ", ",").split(",") if x.strip()]
+        except ValueError:
+            raw_ids = []
+
+    ids: List[int] = []
+    seen = set()
+    for x in raw_ids:
+        try:
+            n = int(x)
+        except Exception:
+            continue
+        if 1 <= n <= 1820 and n not in seen:
+            seen.add(n)
+            ids.append(n)
+        if len(ids) >= 25:
+            break
+
+    p.update({"mode": mode, "ids": ids, "completed": set(), "start_time": _now_ms()})
+
+    # RESET POOL STATS (aux) when starting/restarting a pool
+    st["pool_stats"] = {
+        "played": 0, "solved": 0, "helped": 0, "incorrect": 0,
+        "skipped": 0, "total_time_ms": 0, "total_attempts": 0, "correct_steps": 0
+    }
+    # Clear pool_details list for new pool run
+    st["pool_details"] = []
+
+    if mode == "competition":
+        mins = max(1, min(60, int(data.get("minutes") or 5)))
+        _start_competition_timer(st, mins)
+        st["help_disabled"] = True
+        time_info = _get_competition_time_remaining(st)
+    else:
+        st["competition_ends_at"] = None
+        st["help_disabled"] = False
+        time_info = {"active": False}
+
+    if mode in ("custom", "competition"):
+        # Clear any active hand when pool switches
+        st["current_hand"] = None
+
+    return jsonify({
+        "ok": True, "mode": mode, "count": len(ids),
+        "progress": _get_pool_progress(st), "time_info": time_info,
+        "help_disabled": st.get("help_disabled", False)
+    })
+
+@bp.get("/api/pool/progress")
+def api_pool_progress():
+    st = _state()
+    return jsonify({"ok": True, "progress": _get_pool_progress(st)})
+
+@bp.get("/api/competition/time")
+def api_competition_time():
+    st = _state()
+    t = _get_competition_time_remaining(st)
+    if t["active"]:
+        t["remaining_formatted"] = _fmt_mmss(t["remaining_ms"])
+        t["elapsed_formatted"] = _fmt_mmss(t["elapsed_ms"])
+    return jsonify({"ok": True, "time_info": t})
+
+@bp.post("/api/debug/reset")
+def api_debug_reset():
+    SESSIONS.clear()
+    return jsonify({"ok": True, "message": "State reset"})
+
+@bp.get("/api/debug/state")
+def api_debug_state():
+    st = _state()
+    return jsonify({"ok": True, "debug": {
+        "session_id": _sid(),
+        "current_hand": st.get("current_hand"),
+        "pool": st.get("pool"),
+        "overall_stats": st.get("overall_stats"),
+        "pool_stats": st.get("pool_stats"),
+        "stats_alias": st.get("stats"),  # compatibility view
+        "per_puzzle_count": len(st.get("per_puzzle", [])),
+        "history_count": len(st.get("history", [])),
+    }})
+
+@bp.post("/api/summary")
+def api_summary():
+    st = _state()
+    ctx = st["session_context"]
+    overall = st.get("overall_stats", {})
+    history = st.get("history", [])
+
+    # normalize to frontend-expected keys
+    stats = {
+        "played": overall.get("played", 0),
+        "solved": overall.get("solved", 0),
+        "wrong":  overall.get("incorrect", 0),
+        "helps":  overall.get("helped", 0),
+        "skipped": overall.get("skipped", 0),
+        "total_attempts": overall.get("total_attempts", 0),
+        "time_ms": overall.get("total_time_ms", 0),
+    }
+    attempts = stats["solved"] + stats["wrong"]
+    accuracy = round(100.0 * stats["solved"] / attempts, 1) if attempts else 0.0
+
+    dur_ms = max(0, _now_ms() - ctx.get("started_at", _now_ms()))
+    summary = {
+        "type": "session",
+        "session_type": ctx.get("type", "single"),
+        "session_duration_ms": dur_ms,
+        "session_duration_formatted": _fmt_mmss(dur_ms),
+        "stats": stats,
+        "accuracy_percent": accuracy,
+        "total_time_formatted": _fmt_mmss(stats["time_ms"]),
+        "pool_progress": {"active": bool(st.get("pool", {}).get("mode"))},
+        "history": history[-20:]
+    }
+    dbg("SUMMARY:", summary)
+    return jsonify({"ok": True, "summary": summary})
+
+@bp.get("/api/pool_summary")
+def api_pool_summary():
+    st = _state()
+    pool = st.get("pool", {}) or {}
+    mode = pool.get("mode")
+    ids = pool.get("ids", [])
+    completed = pool.get("completed", [])
+    pst = pool.get("stats", {})  # use pool["stats"] maintained during pool
+    time_ms = pst.get("time_ms", 0)
+
+    progress = {
+        "active": bool(mode),
+        "mode": mode or "off",
+        "total_cases": len(ids),
+        "completed_cases": len(completed),
+        "remaining_cases": max(0, len(ids) - len(completed)),
+        "completed_list": completed,
+        "unfinished_cases": [c for c in ids if c not in completed],
+    }
+    stats = {
+        "done": progress["completed_cases"],
+        "total": progress["total_cases"],
+        "correct": pst.get("solved", 0),
+        "wrong": pst.get("wrong", 0),
+        "skipped": pst.get("skipped", 0),
+        "helps": pst.get("helped", 0),
+        "time_ms": time_ms,
+        "time": _fmt_mmss(time_ms),
+    }
+    details = st.get("pool_details", [])  # [{case_id,result,answer,expected,helps_used,steps,time_ms},...]
+
+    payload = {"ok": True, "summary": {
+        "type": "pool",
+        "mode": mode or "off",
+        "progress": progress,
+        "stats": stats,
+        "details": details
+    }}
+    dbg("POOL SUMMARY:", payload)
+    return jsonify(payload)
 
