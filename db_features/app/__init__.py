@@ -186,6 +186,11 @@ def create_app() -> Flask:
         )
         return resp
     
+    # list all routes at startup
+    for r in app.url_map.iter_rules():
+        #if r.endpoint.startswith('sum4.'):
+        print('route:', r)
+
 
     return app
 
