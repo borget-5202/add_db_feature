@@ -8,6 +8,8 @@ from flask import request, render_template, jsonify, current_app, make_response,
 from sqlalchemy import text
 from app import db
 from . import bp
+from flask_login import current_user, login_required
+
 
 # Reuse shared helpers from game_core
 try:
@@ -99,6 +101,8 @@ def _state() -> Dict[str, Any]:
     if "session_start_ms" not in st:
         st["session_start_ms"] = _now_ms()
 
+    for key in st.keys():
+            dbg("DEBUG: state", key, str(st[key]))
     return st
 
 def _fetch_game_row() -> Dict[str, Any]:
@@ -108,6 +112,7 @@ def _fetch_game_row() -> Dict[str, Any]:
     ).mappings().first()
     if not row:
         raise RuntimeError(f"Game {GAME_KEY} not found.")
+    dbg("DEBUG: fetch_game_row", str(row))
     return dict(row)
 
 # ---------------- Puzzle fetch ----------------
@@ -371,6 +376,7 @@ def _finalize_hand(state: Dict[str, Any], *, solved: bool, outcome: str) -> None
 
 # ---------------- Routes ----------------
 @bp.get("/play")
+@login_required
 def play():
     game = _fetch_game_row()
     initial_cfg = {
@@ -381,6 +387,7 @@ def play():
     }
     dbg("in sum4 card game now")
     return render_template("sum_4_cards/sum4_play.html",
+    #return render_template("sum_4_cards/play.html",
                            game=game, game_key=GAME_KEY,
                            initial_cfg=initial_cfg)
 
@@ -409,6 +416,7 @@ def api_start():
     if case_id is None and pool.get("mode") in ("custom", "competition"):
         next_case_id = _get_next_pool_case(st)
         if next_case_id is None:
+            dbg("DEBUG: Pool completed, returning success")
             dbg("DEBUG: Pool completed, returning success")
             pool_progress = _get_pool_progress(st)
             return jsonify({
@@ -550,6 +558,15 @@ def api_finish():
     is_correct = (int(final_answer) == target)
 
     st = _state()
+        # FIX 1: Update incorrect stats if wrong
+    if not is_correct:   
+        overall = st.setdefault("overall_stats", {})
+        overall["incorrect"] = overall.get("incorrect", 0) + 1
+        if st.get("current_hand", {}).get("is_pool_puzzle"):
+            pstats = st.setdefault("pool_stats", {})
+            pstats["incorrect"] = pstats.get("incorrect", 0) + 1
+
+
     _finalize_hand(st, solved=is_correct, outcome=("solved" if is_correct else "incorrect"))
 
     # Append to session history (for modal)
@@ -786,7 +803,7 @@ def api_pool_summary():
     mode = pool.get("mode")
     ids = pool.get("ids", [])
     completed = pool.get("completed", [])
-    pst = pool.get("stats", {})  # use pool["stats"] maintained during pool
+    pst = pool.get("stats", {})  # maintained during pool
     time_ms = pst.get("time_ms", 0)
 
     progress = {
@@ -798,18 +815,21 @@ def api_pool_summary():
         "completed_list": completed,
         "unfinished_cases": [c for c in ids if c not in completed],
     }
+
+    wrong_attempts = pst.get("incorrect", 0)   # ← key fix here
     stats = {
         "done": progress["completed_cases"],
         "total": progress["total_cases"],
         "correct": pst.get("solved", 0),
-        "wrong": pst.get("wrong", 0),
+        "incorrect": wrong_attempts,           # ← canonical
+        "wrong": wrong_attempts,               # ← compatibility for old frontends
         "skipped": pst.get("skipped", 0),
         "helps": pst.get("helped", 0),
         "time_ms": time_ms,
         "time": _fmt_mmss(time_ms),
     }
-    details = st.get("pool_details", [])  # [{case_id,result,answer,expected,helps_used,steps,time_ms},...]
 
+    details = st.get("pool_details", [])
     payload = {"ok": True, "summary": {
         "type": "pool",
         "mode": mode or "off",
@@ -819,4 +839,21 @@ def api_pool_summary():
     }}
     dbg("POOL SUMMARY:", payload)
     return jsonify(payload)
+
+@bp.post("/api/debug/start")
+def api_debug_start():
+    """Return a small sample list of puzzles for the wrench modal."""
+    try:
+        rows = db.session.execute(text("""
+            SELECT v.case_id
+            FROM app.v_game_case_map v
+            WHERE v.game_key = :k AND v.is_active = true
+            ORDER BY v.case_id ASC
+            LIMIT 8
+        """), {"k": GAME_KEY}).mappings().all()
+        samples = [{"case_id": int(r["case_id"])} for r in rows]
+    except Exception:
+        # Fallback in dev if DB view is not available
+        samples = [{"case_id": n} for n in (1,2,3,4,5)]
+    return jsonify({"ok": True, "samples": samples})
 
