@@ -1,3 +1,4 @@
+
 /* app/games/game24/static/css/style.css — Rewritten based on big_card_style.css
    - Single source of truth for sizes/colors
    - Compatibility with current play_html template (cards, ops, buttons, modals)
@@ -313,6 +314,17 @@ button:active {
 #exit       { background: #cbd5e1;              color:#111;    font-weight:700; }
 #clear, #back { background:#e5e7eb; color:#111; font-weight:700; }
 
+/* Actions: make every button the same neutral look */
+.primary-btn, .success-btn, .info-btn, .warning-btn,
+.danger-btn, .secondary-btn, .clear-btn,
+#deal, #check, #nosolution, #restart, #exit, #clear, #back,
+#next, #no, #restart, #help, #helpAll {
+  /*background: var(--neutral-600) !important;*/
+  background: var(--4background) !important;
+  color: #fff !important;
+  border: none !important;
+  box-shadow: 0 2px 6px rgba(0,0,0,.12) !important;
+}
 button:hover{ filter: brightness(1.05); }
 button:active{ transform: translateY(1px); }
 
@@ -326,56 +338,20 @@ button:active{ transform: translateY(1px); }
 .tab-content{ display:none; line-height:1.6; }
 .tab-content.active{ display:block; }
 
-/* MODAL FIXES */
 .modal-backdrop{
-  position:fixed !important;
-  top: 0 !important;
-  left: 0 !important;
-  width: 100% !important;
-  height: 100% !important;
-  background: rgba(0,0,0,0.65) !important;
-  display: none !important;
-  align-items: center !important;
-  justify-content: center !important;
-  z-index: 10000 !important;
-  opacity: 0 !important;
-  transition: opacity 0.2s ease-in-out !important;
+  position:fixed; inset:0; background:rgba(0,0,0,.65);
+  display:none; align-items:center; justify-content:center; z-index:10000; opacity:0; transition: opacity .2s ease-in-out;
 }
-
-.modal-backdrop[style*="display: flex"],
-.modal-backdrop[style*="display:flex"] {
-  display: flex !important;
-  opacity: 1 !important;
-}
-
 .modal{
-  background: #fff !important;
-  max-width: 90vw !important;
-  width: 650px !important;
-  max-height: 80vh !important;
-  overflow-y: auto !important;
-  border-radius: 12px !important;
-  padding: 20px !important;
-  box-shadow: 0 25px 50px -12px rgba(0,0,0,0.25) !important;
-  z-index: 10001 !important;
-  transform: translateY(-20px) !important;
-  transition: transform 0.2s ease-in-out !important;
+  background:#fff; max-width:90vw; width:650px; max-height:80vh; overflow-y:auto; border-radius:12px; padding:20px;
+  box-shadow: 0 25px 50px -12px rgba(0,0,0,.25); z-index:10001; transform: translateY(-20px); transition: transform .2s ease-in-out;
 }
-
-.modal-backdrop[style*="display: flex"] .modal,
-.modal-backdrop[style*="display:flex"] .modal {
-  transform: translateY(0) !important;
-}
-
+.modal-backdrop[style*="display: flex"]{ display:flex !important; opacity:1; }
+.modal-backdrop[style*="display: flex"] .modal{ transform: translateY(0); }
 .modal-head{ display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; }
 .modal-head h3{ margin:0; color:var(--text); }
 .close{ background:none; border:none; font-size:24px; cursor:pointer; color:var(--muted); }
 .close:hover{ color:var(--error); }
-
-/* Prevent body scroll when modal open */
-body.modal-open {
-  overflow: hidden !important;
-}
 
 /* =========================
    8) RESPONSIVE (mobile game)
@@ -431,25 +407,15 @@ body.modal-open {
 }
 
 .answer-feedback {
-  position: absolute !important;
-  right: 10px !important;
-  top: 50% !important;
-  transform: translateY(-50%) !important;
-  font-size: 1.2rem !important;
-  z-index: 10 !important;
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 1.2rem;
 }
 
 .success-icon { color: var(--success); }
 .error-icon { color: var(--error); }
-
-.big-check, .big-x {
-  font-size: 1.6rem !important;
-  line-height: 1 !important;
-  font-weight: bold !important;
-}
-
-.big-check { color: var(--success) !important; }
-.big-x { color: var(--error) !important; }
 
 /* Button row alignment (keep this separate) */
 .button-row {
@@ -538,24 +504,26 @@ body.modal-open {
 }
 
 .num-wrap {
-  display: grid !important;
-  grid-template-columns: repeat(3, 1fr) !important;
-  gap: 8px !important;
-  max-width: 300px !important;
-  margin: 0 auto !important;
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  flex-wrap: nowrap; /* Ensure single line */
+  max-width: 100%;
+  margin: 0 auto;
 }
 
 .num-wrap button {
-  min-width: 60px !important;
-  height: 50px !important;
-  font-size: 20px !important;
-  background: var(--op-green) !important;
-  color: #111 !important;
+  min-width: var(--op-btn-h);
+  height: var(--op-btn-h);
+  padding: 0 12px;
   border: none;
   border-radius: 10px;
   cursor: pointer;
   font-weight: 800;
+  font-size: 24px;
   line-height: 1;
+  color: #111;
+  background: var(--op-green);
   transition: all 0.1s ease;
   flex-shrink: 0; /* Prevent buttons from shrinking */
 }
@@ -620,194 +588,35 @@ body.modal-open {
 .formula-inline { font-weight: 600; margin-left: .5rem; }
 .hint-inline { opacity: .75; margin-left: .5rem; font-style: italic; }
 
-/* SHAKE ANIMATION */
-.shake {
-  animation: shake 0.5s ease-in-out !important;
+/* Backdrop covers everything */
+#poolCompletionBackdrop.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  display: none;           /* shown via JS => flex */
+  align-items: center;
+  justify-content: center;
+  background: rgba(0,0,0,.5);
+  z-index: 9999;           /* above header/toolbars */
+  opacity: 0;              /* JS sets to 1 when showing */
+  transition: opacity .15s ease;
 }
 
-@keyframes shake {
-  0%, 100% { transform: translateX(0); }
-  25% { transform: translateX(-8px); }
-  75% { transform: translateX(8px); }
-}
-/* Debug modal visibility */
-#debugSamplesModal.modal-backdrop {
-  z-index: 10010 !important; /* Higher than other modals */
-}
-
-#debugSamplesModal .modal {
-  z-index: 10011 !important;
-  background: white !important;
-  color: black !important;
+/* Modal box */
+#poolCompletionBox.modal-box {
+  display: none;           /* JS sets to block */
+  background: #fff;
+  color: #111;
+  border-radius: 12px;
+  width: min(680px, 92vw);
+  max-height: 80vh;
+  overflow: auto;
+  padding: 16px 18px;
+  box-shadow: 0 10px 30px rgba(0,0,0,.35);
+  z-index: 10000;          /* above backdrop */
 }
 
-/* Enhanced Wrench Modal Styles */
-.wrench-header {
-    background: #f8f9fa;
-    padding: 12px;
-    border-radius: 8px;
-    margin-bottom: 12px;
-    border: 1px solid #e9ecef;
+/* Avoid page scrolling when modal open */
+body.modal-open {
+  overflow: hidden;
 }
 
-.wrench-stats {
-    text-align: center;
-    margin-bottom: 12px;
-    padding: 8px;
-    background: white;
-    border-radius: 6px;
-    border: 1px solid #dee2e6;
-}
-
-.wrench-controls {
-    margin-bottom: 8px;
-}
-
-.wrench-puzzle-list {
-    max-height: 50vh;
-    overflow-y: auto;
-    padding: 4px;
-}
-
-.wrench-puzzle-item {
-    transition: all 0.3s ease;
-}
-
-.wrench-puzzle-item:hover {
-    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-}
-
-/* Responsive improvements */
-@media (max-width: 600px) {
-    .wrench-controls > div {
-        flex-direction: column;
-    }
-
-    .wrench-puzzle-item > div > div {
-        flex-direction: column;
-        align-items: flex-start !important;
-        gap: 4px !important;
-    }
-}
-.wrench-puzzle-item {
-    padding: 12px;
-    margin: 8px 0;
-    background: white;
-    border: 1px solid #e9ecef;
-    border-radius: 8px;
-    cursor: pointer;
-    transition: all 0.3s ease;
-}
-
-.wrench-puzzle-item:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-    background: #f8f9fa;
-    border-color: var(--brand);
-}
-
-.wrench-puzzle-content {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-}
-
-.wrench-puzzle-header {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    margin-bottom: 4px;
-}
-
-.wrench-case-number {
-    font-size: 1.1em;
-    color: #2c5aa0;
-}
-
-.wrench-case-badge {
-    background: #e3f2fd;
-    color: #1976d2;
-    padding: 2px 8px;
-    border-radius: 12px;
-    font-size: 0.8em;
-}
-
-.wrench-puzzle-note {
-    color: #666;
-    font-size: 0.9em;
-}
-
-.wrench-play-button {
-    background: var(--brand);
-    color: white;
-    padding: 8px 16px;
-    border-radius: 6px;
-    font-size: 0.9em;
-    font-weight: 600;
-}
-.quick-case-btn {
-    padding: 8px 6px;
-    background: #e3f2fd;
-    color: #1976d2;
-    border: 1px solid #bbdefb;
-    border-radius: 4px;
-    cursor: pointer;
-    font-size: 0.8em;
-    font-weight: 600;
-    transition: all 0.2s ease;
-}
-
-.quick-case-btn:hover {
-    background: #bbdefb;
-    transform: translateY(-1px);
-}
-
-.wrench-quick-access {
-    background: #f8f9fa;
-    padding: 12px;
-    border-radius: 6px;
-    margin-bottom: 12px;
-    border: 1px solid #e9ecef;
-}
-.quick-case-btn {
-    padding: 8px 6px;
-    background: #e3f2fd;
-    color: #1976d2;
-    border: 1px solid #bbdefb;
-    border-radius: 4px;
-    cursor: pointer;
-    font-size: 0.8em;
-    font-weight: 600;
-    transition: all 0.2s ease;
-}
-
-.quick-case-btn:hover {
-    background: #bbdefb;
-    transform: translateY(-1px);
-}
-
-.wrench-quick-access {
-    background: #f8f9fa;
-    padding: 12px;
-    border-radius: 6px;
-    margin-bottom: 12px;
-    border: 1px solid #e9ecef;
-}
-
-.wrench-header {
-    background: linear-gradient(135deg, #f8f9fa, #e9ecef);
-    padding: 16px;
-    border-radius: 8px;
-    margin-bottom: 16px;
-    border: 1px solid #dee2e6;
-}
-
-.wrench-stats {
-    text-align: center;
-    margin-bottom: 12px;
-    padding: 12px;
-    background: white;
-    border-radius: 6px;
-    border: 1px solid #dee2e6;
-    font-size: 1.1em;
-}
