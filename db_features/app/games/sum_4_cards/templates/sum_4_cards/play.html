@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 
 {% block content %}
-  <link rel="stylesheet" href="{{ url_for('games_assets_bp.static', filename='css/style.css') }}">
+  <link rel="stylesheet" href="{{ url_for('games_assets_bp.static', filename='css/style_deepfix.css') }}">
   <style>
     .sum4-wrapper { max-width: var(--max-w); margin: 0 auto; padding: 20px; }
     #solutionPanel.sum4-solution { max-width: 500px; margin: 16px auto; }
@@ -307,5 +307,5 @@
     </div>
   </div>
 
-  <script src="{{ url_for('sum4.static', filename='js/sum4_script.js') }}"></script>
+  <script src="{{ url_for('sum4.static', filename='js/script.js') }}"></script>
 {% endblock %}
