@@ -11,11 +11,67 @@ from flask_login import LoginManager
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 
+# NEW: auto-register games
+from importlib import import_module
+from pkgutil import iter_modules
+from pathlib import Path
+
+
 # --- extensions ---
 migrate = Migrate()
 login_manager = LoginManager()
 # dev-friendly in-memory limiter; swap for redis in prod
 limiter = Limiter(get_remote_address, storage_uri="memory://")
+
+def _auto_register_game_blueprints(app):
+    """
+    Autoload any game blueprint under app.games.<pkg>.
+    Looks for `bp` in the package, else tries `<pkg>_routes`.
+    Skips internal utility packages like 'core' or 'assets'.
+    """
+    try:
+        import app.games as games_pkg
+    except Exception:
+        app.logger.info("No app.games package found; skipping auto game registration")
+        return
+
+    base_path = Path(games_pkg.__file__).parent
+    skip = {"core", "assets", "__pycache__"}
+    for mod in iter_modules([str(base_path)]):
+        pkg = mod.name
+        if pkg in skip or pkg.startswith("_"):
+            continue
+
+        # Already registered? (by name)
+        if pkg in app.blueprints:
+            app.logger.debug(f"[auto-games] '{pkg}' already registered; skipping")
+            continue
+
+        bp = None
+        try:
+            # Try package-level bp (recommended by our scaffold)
+            pkg_mod = import_module(f"app.games.{pkg}")
+            bp = getattr(pkg_mod, "bp", None)
+
+            # Fallback: routes module named <pkg>_routes.py
+            if bp is None:
+                try:
+                    routes_mod = import_module(f"app.games.{pkg}.{pkg}_routes")
+                    bp = getattr(routes_mod, "bp", None)
+                except Exception:
+                    bp = None
+
+            if bp is not None:
+                # Avoid duplicate blueprint names (different pkg using same bp.name)
+                if bp.name in app.blueprints:
+                    app.logger.debug(f"[auto-games] blueprint '{bp.name}' already present; skipping")
+                    continue
+                app.register_blueprint(bp)
+                app.logger.info(f"[auto-games] registered game: {pkg}")
+            else:
+                app.logger.debug(f"[auto-games] no blueprint found in {pkg}")
+        except Exception:
+            app.logger.exception(f"[auto-games] failed to register game '{pkg}'")
 
 
 def create_app() -> Flask:
@@ -126,6 +182,9 @@ def create_app() -> Flask:
         app.register_blueprint(cb2s_bp)
     except Exception:
         app.logger.info("Count-by-2s blueprint not found; skipping")
+
+    # Auto-discover and register any additional games under app/games/*
+    _auto_register_game_blueprints(app)
 
     # ---------------------------
     # Warmup Game24 store (DB-first, fallback JSON)
