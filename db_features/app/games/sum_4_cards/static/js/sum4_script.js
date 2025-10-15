@@ -1,25 +1,8 @@
 /* Sum 4 Cards — frontend (single source of truth = backend)
-   - Fix: pool summary parsing (reads data.summary.*)
    - Fix: loud “wrong” feedback (shake + big X)
-   - Fix: Save Pool shows total count
-   - Fix: Wrench (debug samples) modal flow
-   - Remove local stat mutations for correctness (no more client “incorrect++”)
-   - Add DEBUG switch (toggle noisy logs)
-   - Keep existing behaviors unchanged otherwise
-   2025-10-14
 */
 (() => {
   'use strict';
-  // Add this at the top of your sum4.js file, right after 'use strict'
-  window.addEventListener('error', function(e) {
-      console.error('Global error:', e.error);
-      console.error('Error at:', e.filename, e.lineno, e.colno);
-  });
-  
-  // Also add unhandled promise rejection handler
-  window.addEventListener('unhandledrejection', function(e) {
-      console.error('Unhandled promise rejection:', e.reason);
-  });
 
   // --------------- Config ---------------
   const DEBUG = true; // << flip to false to silence [SUM4] logs
@@ -811,214 +794,162 @@
       showEl('#howtoModal');
     });
     
-   on($('#btnWrench'), 'click', async (e) => {
-      e.preventDefault();
-      try {
-          dbg('WRENCH clicked → /debug/start');
-          const r = await fetch(`${API_BASE}/debug/start`, { method:'POST' });
-          if (!r.ok) throw new Error(`HTTP ${r.status}`);
-          const t = await r.text(); 
-          let j={}; 
-          try { j=JSON.parse(t); } catch(parseErr) { 
-              console.error('Parse error:', parseErr, 'Response:', t);
-              throw new Error('Invalid JSON response');
-          }
-          dbg('WRENCH ←', j);
-          
-          // DEBUG: Log everything about the response
-          console.log('🔧 WRENCH DEBUG - Full response:', j);
-          console.log('🔧 WRENCH DEBUG - j.samples:', j.samples);
-          console.log('🔧 WRENCH DEBUG - j.samples type:', typeof j.samples);
-          console.log('🔧 WRENCH DEBUG - j.samples length:', j.samples ? j.samples.length : 'none');
-          console.log('🔧 WRENCH DEBUG - j.samples contents:', j.samples ? j.samples.slice(0, 3) : 'none');
-          
-          // Enhanced: Handle both response formats with advanced features
-          const list = Array.isArray(j.samples) ? j.samples : (Array.isArray(j) ? j : []);
-          
-          // DEBUG: More info about the processed list
-          console.log('🔧 WRENCH DEBUG - Processed list:', list);
-          console.log('🔧 WRENCH DEBUG - List length:', list.length);
-          
-          const box = $('#debugSamplesList');
-          console.log('🔧 WRENCH DEBUG - Box element found:', !!box);
-          
-          if (box) {
-              if (list.length) {
-                  // DEBUG: Test simple rendering first
-                  console.log('🔧 WRENCH DEBUG - Starting enhanced rendering...');
-                  
-                  // Test with simple HTML first
-                  const testHTML = `
-                      <div style="background: #e3f2fd; padding: 10px; border-radius: 8px; margin-bottom: 10px;">
-                          <strong>DEBUG: ${list.length} puzzles loaded</strong>
-                      </div>
-                      ${list.map((puzzle, index) => `
-                          <div style="padding: 8px; margin: 4px 0; background: #f0f0f0; border-radius: 4px;">
-                              <strong>#${puzzle.case_id || puzzle.id || '?'}</strong>
-                              - Sum: ${puzzle.sum_pips || '?'}
-                              ${puzzle.note ? ` - ${puzzle.note}` : ''}
-                              <button onclick="start(${puzzle.case_id || puzzle.id})" style="margin-left: 10px; padding: 2px 8px;">Play</button>
-                          </div>
-                      `).join('')}
-                  `;
-                  
-                  box.innerHTML = testHTML;
-                  console.log('🔧 WRENCH DEBUG - Simple HTML set, box content length:', box.innerHTML.length);
-                  
-              } else {
-                  console.log('🔧 WRENCH DEBUG - No puzzles in list');
-                  box.innerHTML = '<p>No sample puzzles available. List was empty.</p>';
-              }
-          } else {
-              console.error('🔧 WRENCH DEBUG - Box element not found!');
-          }
-          
-          showEl('#debugSamplesModal');
-          console.log('🔧 WRENCH DEBUG - Modal shown');
-          
-      } catch (err) { 
-          console.error('🔧 WRENCH DEBUG - Error:', err); 
-          msg('Failed to load sample questions.', 'error');
-      }
-  }); 
-  // Helper functions for the enhanced wrench modal
-  function calculatePuzzleStats(puzzles) {
-      const sums = puzzles.map(p => p.sum_pips || estimateSum(p)).filter(s => s);
-      return {
-          total: puzzles.length,
-          minSum: sums.length ? Math.min(...sums) : 0,
-          maxSum: sums.length ? Math.max(...sums) : 0,
-          avgSum: sums.length ? Math.round(sums.reduce((a, b) => a + b, 0) / sums.length) : 0
-      };
-  }
-  
-  function estimateSum(puzzle) {
-      // Simple estimation based on case ID pattern (you can customize this)
-      const caseId = puzzle.case_id || puzzle.id || 0;
-      return 10 + (caseId % 30); // Example: sums between 10-40
-  }
-  
-  function getDifficultyLevel(sum) {
-      if (!sum) return 'unknown';
-      if (sum <= 20) return 'easy';
-      if (sum <= 30) return 'medium';
-      return 'hard';
-  }
-  
-  function renderPuzzleList(puzzles, searchTerm = '', difficultyFilter = 'all', sortBy = 'id') {
-      // Filter puzzles
-      let filtered = puzzles.filter(puzzle => {
-          const caseId = String(puzzle.case_id || puzzle.id || '');
-          const note = String(puzzle.note || '').toLowerCase();
-          const sum = puzzle.sum_pips || estimateSum(puzzle);
-          const difficulty = getDifficultyLevel(sum);
-          
-          // Search filter
-          const searchMatch = !searchTerm || 
-                             caseId.includes(searchTerm) || 
-                             note.includes(searchTerm.toLowerCase());
-          
-          // Difficulty filter
-          const difficultyMatch = difficultyFilter === 'all' || difficulty === difficultyFilter;
-          
-          return searchMatch && difficultyMatch;
-      });
-      
-      // Sort puzzles
-      filtered.sort((a, b) => {
-          const aId = a.case_id || a.id || 0;
-          const bId = b.case_id || b.id || 0;
-          const aSum = a.sum_pips || estimateSum(a);
-          const bSum = b.sum_pips || estimateSum(b);
-          const aDiff = getDifficultyLevel(aSum);
-          const bDiff = getDifficultyLevel(bSum);
-          
-          switch(sortBy) {
-              case 'sum':
-                  return aSum - bSum;
-              case 'difficulty':
-                  const diffOrder = { 'easy': 1, 'medium': 2, 'hard': 3, 'unknown': 4 };
-                  return diffOrder[aDiff] - diffOrder[bDiff];
-              default: // 'id'
-                  return aId - bId;
-          }
-      });
-      
-      if (filtered.length === 0) {
-          return '<p style="text-align: center; color: #666; padding: 20px;">No puzzles match your filters.</p>';
-      }
-      
-      // Render the list
-      const items = filtered.map((puzzle, index) => {
-          const caseId = puzzle.case_id || puzzle.id || '?';
-          const note = puzzle.note || `Case ${caseId}`;
-          const sum = puzzle.sum_pips || estimateSum(puzzle);
-          const difficulty = getDifficultyLevel(sum);
-          const difficultyColor = {
-              'easy': '#10b981',
-              'medium': '#f59e0b', 
-              'hard': '#ef4444',
-              'unknown': '#6b7280'
-          };
-          
-          return `
-              <div class="wrench-puzzle-item" 
-                   onclick="start(${caseId})"
-                   style="margin-bottom: 8px; padding: 12px; background: #f8f9fa; border-radius: 8px; cursor: pointer; transition: all 0.2s; border-left: 4px solid ${difficultyColor[difficulty]};"
-                   onmouseover="this.style.background='#e3f2fd'; this.style.transform='translateX(4px)';" 
-                   onmouseout="this.style.background='#f8f9fa'; this.style.transform='translateX(0)';">
-                  <div style="display: flex; justify-content: space-between; align-items: flex-start;">
-                      <div style="flex: 1;">
-                          <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
-                              <strong style="font-size: 1.1em;">#${caseId}</strong>
-                              <span style="background: ${difficultyColor[difficulty]}; color: white; padding: 2px 8px; border-radius: 12px; font-size: 0.8em; text-transform: uppercase;">
-                                  ${difficulty}
-                              </span>
-                              <span style="font-weight: 600; color: #374151;">Sum: ${sum}</span>
-                          </div>
-                          <div style="font-size: 0.9em; color: #666;">
-                              ${note}
-                          </div>
-                      </div>
-                      <button onclick="event.stopPropagation(); start(${caseId})" 
-                              style="padding: 6px 12px; background: var(--brand); color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 0.9em;">
-                          Play
-                      </button>
-                  </div>
-              </div>
-          `;
-      }).join('');
-      
-      return `<div>${items}</div>`;
-  }
-  
-  function setupWrenchFilters(originalList) {
-      const searchInput = $('#wrenchSearch');
-      const difficultySelect = $('#wrenchDifficulty');
-      const sortSelect = $('#wrenchSort');
-      const puzzleList = $('#wrenchPuzzleList');
-      
-      const updateList = () => {
-          const searchTerm = searchInput.value;
-          const difficultyFilter = difficultySelect.value;
-          const sortBy = sortSelect.value;
-          
-          puzzleList.innerHTML = renderPuzzleList(originalList, searchTerm, difficultyFilter, sortBy);
-      };
-      
-      if (searchInput) searchInput.addEventListener('input', updateList);
-      if (difficultySelect) difficultySelect.addEventListener('change', updateList);
-      if (sortSelect) sortSelect.addEventListener('change', updateList);
-  }
-  
-  // Global function for random puzzle
-  window.playRandomPuzzle = function() {
-      const puzzleItems = document.querySelectorAll('.wrench-puzzle-item');
-      if (puzzleItems.length > 0) {
-          const randomIndex = Math.floor(Math.random() * puzzleItems.length);
-          puzzleItems[randomIndex].click();
-      }
-  };
+         // === WRENCH MODAL - ENHANCED VERSION ===
+     on($('#btnWrench'), 'click', async (e) => {
+         e.preventDefault();
+         e.stopPropagation();
+         
+         try {
+             const r = await fetch(`${API_BASE}/debug/start`, { method:'POST' });
+             const data = await r.json();
+             const box = $('#debugSamplesList');
+             
+             if (box) {
+                 const puzzles = data.samples || [];
+                 box.innerHTML = createWrenchHTML(puzzles);
+                 
+                 if (puzzles.length) setupWrenchSearch(puzzles);
+                 setupPuzzleClickHandlers();
+                 setupCaseIdLoader();
+                 setupQuickAccessButtons();
+             }
+             
+             showEl('#debugSamplesModal');
+         } catch (err) {
+             console.error('Wrench error:', err);
+             msg('Failed to load puzzles.', 'error');
+         }
+     });
+     
+     function createWrenchHTML(puzzles) {
+         return `
+             <div class="wrench-header">
+                 <div class="wrench-stats">
+                     <strong>Puzzle Browser</strong>
+                     <div style="font-size: 0.9em; color: #666; margin-top: 4px;">
+                         ${puzzles.length} sample puzzles + access to all 1820 cases
+                     </div>
+                 </div>
+                 
+                 <div class="wrench-quick-access">
+                     <div style="margin-bottom: 12px;">
+                         <label style="display: block; margin-bottom: 6px; font-weight: 600;">Quick Access:</label>
+                         <div style="display: flex; gap: 8px;">
+                             <input type="number" id="wrenchCaseId" placeholder="Case ID (1-1820)" 
+                                    min="1" max="1820" style="flex: 1; padding: 10px; border: 1px solid #ddd; border-radius: 4px;">
+                             <button id="wrenchLoadCase" class="primary-btn" style="white-space: nowrap;">Load</button>
+                         </div>
+                     </div>
+                     
+                     <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-bottom: 12px;">
+                         <button class="quick-case-btn" data-case="1">#1</button>
+                         <button class="quick-case-btn" data-case="10">#10</button>
+                         <button class="quick-case-btn" data-case="100">#100</button>
+                         <button class="quick-case-btn" data-case="500">#500</button>
+                         <button class="quick-case-btn" data-case="42">#42</button>
+                         <button class="quick-case-btn" data-case="123">#123</button>
+                         <button class="quick-case-btn" data-case="777">#777</button>
+                         <button class="quick-case-btn" data-case="1820">#1820</button>
+                     </div>
+                 </div>
+                 
+                 <div class="wrench-sample-puzzles">
+                     <label style="display: block; margin-bottom: 8px; font-weight: 600;">Sample Puzzles:</label>
+                     <input type="text" id="wrenchSearch" placeholder="Search sample puzzles..." 
+                            style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; margin-bottom: 12px;">
+                 </div>
+             </div>
+             
+             <div id="wrenchPuzzleContainer" class="wrench-puzzle-list">
+                 ${puzzles.length ? renderPuzzles(puzzles) : '<p>No sample puzzles available.</p>'}
+             </div>
+         `;
+     }
+     
+     function setupCaseIdLoader() {
+         const caseIdInput = $('#wrenchCaseId');
+         const loadButton = $('#wrenchLoadCase');
+         if (caseIdInput && loadButton) {
+             loadButton.addEventListener('click', () => {
+                 const caseId = parseInt(caseIdInput.value);
+                 if (caseId >= 1 && caseId <= 1820) {
+                     start(caseId);
+                     hideEl('#debugSamplesModal');
+                     caseIdInput.value = '';
+                 } else {
+                     msg('Please enter a case ID between 1 and 1820', 'error');
+                     caseIdInput.focus();
+                 }
+             });
+             caseIdInput.addEventListener('keypress', (e) => {
+                 if (e.key === 'Enter') loadButton.click();
+             });
+         }
+     }
+     
+     function setupQuickAccessButtons() {
+         document.querySelectorAll('.quick-case-btn').forEach(button => {
+             button.addEventListener('click', (e) => {
+                 const caseId = parseInt(button.getAttribute('data-case'));
+                 start(caseId);
+                 hideEl('#debugSamplesModal');
+             });
+         });
+     }
+     
+     function setupWrenchSearch(puzzles) {
+         const searchInput = $('#wrenchSearch');
+         const container = $('#wrenchPuzzleContainer');
+         if (searchInput && container) {
+             searchInput.addEventListener('input', (e) => {
+                 container.innerHTML = renderPuzzles(puzzles, e.target.value);
+                 setupPuzzleClickHandlers();
+             });
+         }
+     }
+     
+     function setupPuzzleClickHandlers() {
+         const container = $('#wrenchPuzzleContainer');
+         if (container) {
+             container.addEventListener('click', (e) => {
+                 const puzzleItem = e.target.closest('.wrench-puzzle-item');
+                 if (puzzleItem) {
+                     const caseId = puzzleItem.getAttribute('data-case-id');
+                     start(parseInt(caseId));
+                     hideEl('#debugSamplesModal');
+                 }
+             });
+         }
+     }
+     
+     function renderPuzzles(puzzles, searchTerm = '') {
+         const filtered = searchTerm 
+             ? puzzles.filter(p => String(p.case_id).includes(searchTerm) || (p.note && p.note.toLowerCase().includes(searchTerm.toLowerCase())))
+             : puzzles;
+         
+         if (filtered.length === 0) return '<p style="text-align: center; color: #666; padding: 20px;">No puzzles found.</p>';
+         
+         return filtered.map(puzzle => `
+             <div class="wrench-puzzle-item" data-case-id="${puzzle.case_id}">
+                 <div class="wrench-puzzle-content">
+                     <div class="wrench-puzzle-info">
+                         <div class="wrench-puzzle-header">
+                             <strong class="wrench-case-number">#${puzzle.case_id}</strong>
+                             <span class="wrench-case-badge">Case ${puzzle.case_id}</span>
+                         </div>
+                         ${puzzle.note ? `<div class="wrench-puzzle-note">${puzzle.note}</div>` : ''}
+                     </div>
+                     <span class="wrench-play-button">Play →</span>
+                 </div>
+             </div>
+         `).join('');
+     }
+    // Debug samples modal wiring
+     on($('#debugSamplesClose'), 'click', () => hideEl('#debugSamplesModal'));
+     on($('#debugSamplesGotIt'), 'click', () => hideEl('#debugSamplesModal'));
+     on($('#debugSamplesModal'), 'click', (e) => {
+         if (e.target.id === 'debugSamplesModal') hideEl('#debugSamplesModal');
+     });
 
     // Pool UI & Save / Clear
     on($('#poolState'), 'change', () => {
